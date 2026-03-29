@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install rich>=13.0.0 pytest
+        run: pip install "rich>=13.0.0" pytest
 
       - name: Syntax check
         run: python -m py_compile cgti_lite.py
