@@ -13,7 +13,7 @@
 #
 """
 ╔══════════════════════════════════════════════════════╗
-║        CGTI Lite for OpenClaw  —  v1.2.0                             ║
+║        CGTI Lite for OpenClaw  —  v1.2.1                             ║
 ║        Suricata IDS/IPS Cross-Platform Manager                       ║
 ║        Windows · macOS · Linux                                       ║
 ╚══════════════════════════════════════════════════════╝
