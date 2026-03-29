@@ -159,14 +159,17 @@ class TestIPBlockManagerValidation(unittest.TestCase):
         result = ipm.block("1.2.3.4; rm -rf /", "test")
         self.assertFalse(result)
 
-    def test_block_accepts_valid_ip(self):
-        ipm = cgti_lite.IPBlockManager()
-        # Use a mock to prevent actual firewall calls
-        with patch.object(ipm, '_fw'):
-            result = ipm.block("10.20.30.40", "test")
-            self.assertTrue(result)
-            # Cleanup
-            ipm.unblock("10.20.30.40")
+   def test_block_accepts_valid_ip(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp_blocked = Path(td) / "blocked_ips.json"
+            tmp_config_dir = Path(td)
+            with patch.object(cgti_lite, 'BLOCKED_FILE', tmp_blocked), \
+                 patch.object(cgti_lite, 'CONFIG_DIR', tmp_config_dir):
+                ipm = cgti_lite.IPBlockManager()
+                with patch.object(ipm, '_fw'):
+                    result = ipm.block("10.20.30.40", "test")
+                    self.assertTrue(result)
+                    ipm.unblock("10.20.30.40")
 
 
 class TestLogRotation(unittest.TestCase):
