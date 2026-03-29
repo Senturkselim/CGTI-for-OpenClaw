@@ -181,9 +181,10 @@ python cgti_lite.py install
 cgti install
 
 # 2. Start Suricata monitoring
-sudo cgti start -i eth0          # Linux
-cgti start -i "Wi-Fi"            # Windows
-sudo cgti start -i en0           # macOS
+sudo cgti start                  # Interactive — select interface from list
+sudo cgti start -i eth0          # Linux (direct)
+cgti start -i "Wi-Fi"            # Windows (direct)
+sudo cgti start -i en0           # macOS (direct)
 
 # 3. Watch live alerts
 cgti live
