@@ -1,0 +1,308 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 05: Data Exfiltration Detection
+# File: oc-data-exfiltration.rules
+# SID Range: 9201500 – 9201999
+# Version: 1.0
+# Date: 2026-03-07
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects data exfiltration from an OpenClaw instance or from the device
+# of an OpenClaw user. OpenClaw's unique risk profile:
+# - Integration with all messaging platforms (WhatsApp, Telegram, Slack, Discord,
+#   Signal, iMessage, Teams) → agent exfiltration resembles normal
+#   user traffic (semantic exfiltration)
+# - API keys, OAuth tokens stored in plaintext (~/.openclaw/)
+# - Persistent memory (SOUL.md, MEMORY.md) holds cross-session data
+# - File system, shell, browser access → broad data exposure
+#
+# This category includes messaging C2 extension: attackers can use OpenClaw's
+# messaging integrations as a C2 and exfiltration channel.
+#
+# REFERENCES
+# ----------
+# - Giskard: "OpenClaw Security Issues: Data Leakage" (Feb 2026)
+# - Kaspersky: "OpenClaw Risks" (Feb 2026)
+# - Adversa.ai: "OpenClaw Security 101" (Feb 2026)
+# - Conscia: "OpenClaw Security Crisis" (Feb 2026)
+# - MintMCP: "OpenClaw Security Risks for CISOs" (Mar 2026)
+# - NCC Group: "Detecting Rclone Data Exfiltration"
+# - Red Canary: "Rclone Wars" (2024)
+# - MITRE ATT&CK: T1567, T1048, T1041
+# ============================================================================
+
+
+# ============================================================================
+# 05A: OPENCLAW CREDENTIAL & IDENTITY FILE EXFILTRATION
+# ============================================================================
+# Exfiltration of OpenClaw-specific identity and configuration files.
+# ~/.openclaw/ directory: API key, OAuth token, session, device identity.
+# Source: Hudson Rock (Vidar OpenClaw variant), Conscia
+# ============================================================================
+
+# --- openclaw.json Agent Identity ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OpenClaw Agent Identity File (openclaw.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"openclaw.json"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201500; rev:1;)
+
+# --- device.json Device Identity ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OpenClaw Device Identity (device.json + openclaw)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"device.json"; content:"openclaw"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201501; rev:1;)
+
+# --- SOUL.md Persistent Memory ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OpenClaw SOUL.md Memory File Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SOUL.md"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Very_Low; sid:9201502; rev:1;)
+
+# --- MEMORY.md Daily Log ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OpenClaw MEMORY.md Log Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MEMORY.md"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Very_Low; sid:9201503; rev:1;)
+
+# --- .env File with API Keys ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OpenAI API Key in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201504; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Anthropic API Key in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201505; rev:1;)
+
+# --- .clawdbot/.env Legacy Path Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Legacy .clawdbot env File Content in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:".clawdbot"; content:"KEY"; nocase; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201506; rev:1;)
+
+# --- OAuth Token Exfiltration ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - OAuth Access Token in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"access_token"; content:"Bearer"; distance:0; within:100; classtype:trojan-activity; priority:2; metadata:mitre_attack T1528, signature_severity Major, false_positive Low; sid:9201507; rev:1;)
+
+
+# ============================================================================
+# 05B: SSH KEY & CERTIFICATE EXFILTRATION
+# ============================================================================
+
+# --- SSH Private Key Exfiltration ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - SSH Private Key in HTTP POST (RSA/ED25519)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"-----BEGIN"; content:"PRIVATE KEY-----"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.004, signature_severity Critical, false_positive Very_Low; sid:9201510; rev:1;)
+
+# --- AWS Credentials ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - AWS Credentials Pair in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"aws_access_key_id"; nocase; content:"aws_secret_access_key"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201511; rev:1;)
+
+# --- GCP Service Account Key ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - GCP Service Account Key in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"service_account"; content:"private_key"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201512; rev:1;)
+
+# --- Kubeconfig File Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Kubeconfig Content in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"apiVersion"; content:"clusters"; distance:0; within:50; content:"certificate-authority"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201513; rev:1;)
+
+
+# ============================================================================
+# 05C: MESSAGING PLATFORM C2 / EXFILTRATION
+# ============================================================================
+# OpenClaw integrates with WhatsApp, Telegram, Slack, Discord, Signal,
+# iMessage, and Teams. Attackers can use these channels for C2 and
+# exfiltration. Semantic exfiltration: agent traffic resembles normal
+# user traffic; EDR/firewall sees a normal HTTP 200.
+# Source: Kaspersky, MintMCP, Giskard, Adversa.ai
+# ============================================================================
+
+# --- Telegram Bot API: File/Document Send ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Telegram Bot API sendDocument (File Exfiltration)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendDocument"; threshold:type both, track by_src, count 5, seconds 60; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low, deployment_note Correlate with agent context - legitimate bots also use this; sid:9201520; rev:1;)
+
+# --- Telegram Bot API: Bulk Message Send ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Telegram Bot API Rapid sendMessage (Bulk Exfil)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/sendMessage"; threshold:type both, track by_src, count 15, seconds 60; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201521; rev:1;)
+
+# --- Telegram Bot API: Photo Send (Screenshot Exfil) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Telegram Bot API sendPhoto (Screenshot Exfil)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/sendPhoto"; threshold:type both, track by_src, count 3, seconds 60; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201522; rev:2;)
+
+# --- Discord Webhook: File Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Discord Webhook File Upload (Data Exfiltration)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"discord.com"; http.uri; content:"/api/webhooks/"; http.header; content:"multipart/form-data"; threshold:type both, track by_src, count 5, seconds 60; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201523; rev:1;)
+
+# --- Discord Webhook: Large Message ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Discord Webhook Large Content POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"discord.com"; http.uri; content:"/api/webhooks/"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567, signature_severity Major, false_positive Medium, deployment_note Single Discord webhook message triggers this rule - correlate with volume; sid:9201524; rev:2;)
+
+# --- Slack Webhook: Data POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Slack Incoming Webhook Data POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"hooks.slack.com"; http.uri; content:"/services/"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201525; rev:1;)
+
+# --- Slack API: File Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Slack API File Upload (files.upload)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"slack.com"; http.uri; content:"files.upload"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Medium; sid:9201526; rev:1;)
+
+# --- Microsoft Teams Webhook ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Microsoft Teams Webhook Data POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.office.com"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567, signature_severity Major, false_positive Medium; sid:9201527; rev:1;)
+
+# --- Generic Webhook.site Exfiltration ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - webhook.site Data Exfiltration POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201528; rev:1;)
+
+# --- Pipedream Webhook ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Pipedream Webhook Data POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"pipedream.net"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201529; rev:1;)
+
+
+# ============================================================================
+# 05D: CLOUD STORAGE EXFILTRATION
+# ============================================================================
+# Data exfiltration via cloud storage services such as Rclone, MEGA,
+# Dropbox, Google Drive, OneDrive, etc. Also common among ransomware
+# groups (Conti, DarkSide).
+# ============================================================================
+
+# --- Rclone User-Agent ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Rclone User-Agent Detected (Cloud Exfiltration Tool)"; flow:established,to_server; http.user_agent; content:"rclone/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567.002, signature_severity Critical, false_positive Low, deployment_note Rclone is a known exfiltration tool used by ransomware groups; reference:url,research.nccgroup.com/2021/05/27/detecting-rclone-an-effective-tool-for-exfiltration/; sid:9201540; rev:1;)
+
+# --- MEGA.nz Upload (userstorage.mega.co.nz) ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC EXFIL - MEGA.nz Upload DNS Query (userstorage.mega.co.nz)"; dns.query; content:"userstorage.mega.co.nz"; nocase; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567.002, signature_severity Critical, false_positive Low; sid:9201541; rev:1;)
+
+# --- MEGA.nz API Access (Non-Browser) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - MEGA.nz API Access via Non-Browser UA"; flow:established,to_server; http.host; content:"g.api.mega.co.nz"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567.002, signature_severity Critical, false_positive Low; sid:9201542; rev:1;)
+
+# --- transfer.sh File Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - transfer.sh File Upload (Temporary Hosting)"; flow:established,to_server; http.method; content:"PUT"; http.host; content:"transfer.sh"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201543; rev:1;)
+
+# --- file.io Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - file.io File Upload"; flow:established,to_server; http.method; content:"POST"; http.host; content:"file.io"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Critical, false_positive Medium, deployment_note file.io is a legitimate file sharing service; sid:9201544; rev:2;)
+
+# --- 0x0.st Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - 0x0.st File Upload (Anonymous Hosting)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"0x0.st"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201545; rev:1;)
+
+# --- catbox.moe Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - catbox.moe File Upload"; flow:established,to_server; http.method; content:"POST"; http.host; content:"catbox.moe"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201546; rev:1;)
+
+# --- Gofile Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - gofile.io Upload"; flow:established,to_server; http.method; content:"POST"; http.host; content:"gofile.io"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567, signature_severity Informational, false_positive Medium, deployment_note gofile.io is a legitimate file sharing service - correlate with other stealer indicators; sid:9201547; rev:2;)
+
+# --- AnonFiles / Pixeldrain ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - pixeldrain.com Upload"; flow:established,to_server; http.method; content:"POST"; http.host; content:"pixeldrain.com"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201548; rev:1;)
+
+
+# ============================================================================
+# 05E: PASTE SITE & CODE SHARING EXFILTRATION
+# ============================================================================
+
+# --- Pastebin POST (API) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Pastebin API POST (api_option=paste)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"pastebin.com"; http.request_body; content:"api_option=paste"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201550; rev:1;)
+
+# --- GitHub Gist API POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - GitHub Gist API POST (Data Exfiltration)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.github.com"; http.uri; content:"/gists"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1567.001, signature_severity Major, false_positive Medium; sid:9201551; rev:2;)
+
+# --- GitLab Snippet POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - GitLab Snippet POST"; flow:established,to_server; http.method; content:"POST"; http.host; content:"gitlab.com"; http.uri; content:"/api/"; content:"snippets"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567.001, signature_severity Major, false_positive Medium; sid:9201552; rev:1;)
+
+# --- Privatebin POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - PrivateBin POST (Encrypted Paste)"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"?paste"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Major, false_positive Low; sid:9201553; rev:1;)
+
+
+# ============================================================================
+# 05F: BROWSER DATA & SESSION EXFILTRATION
+# ============================================================================
+# Stealers exfiltrate browser databases and session cookies.
+# ============================================================================
+
+# --- SQLite Database in POST Body ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - SQLite Database in HTTP POST (Browser DB Theft)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SQLite format 3"; depth:20; classtype:trojan-activity; priority:1; metadata:mitre_attack T1555.003, signature_severity Critical, false_positive Very_Low; sid:9201560; rev:1;)
+
+# --- Cookie Database Keywords in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Browser Cookie Data in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"cookies"; nocase; content:"encrypted_value"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1539, signature_severity Critical, false_positive Very_Low; sid:9201561; rev:1;)
+
+
+# ============================================================================
+# 05G: CRYPTO WALLET & SEED PHRASE EXFILTRATION
+# ============================================================================
+# AMOS targets 60+ crypto wallets. A significant portion of OpenClaw
+# users are involved in cryptocurrency.
+# ============================================================================
+
+# --- Crypto Seed Phrase (BIP39 Words) in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Potential BIP39 Seed Phrase in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air)\b.{1,300}\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air)\b/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9201570; rev:1;)
+
+# --- MetaMask Vault Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - MetaMask Vault Data in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MetaMask"; content:"vault"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9201571; rev:1;)
+
+
+# ============================================================================
+# 05H: macOS KEYCHAIN EXFILTRATION
+# ============================================================================
+# AMOS's primary target: iCloud Keychain, login.keychain
+# ============================================================================
+
+# --- Keychain Database Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - macOS Keychain Database in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"login.keychain"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1555.001, signature_severity Critical, false_positive Very_Low; sid:9201580; rev:1;)
+
+# --- KeePass Database ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - KeePass Database in POST (.kdbx)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:".kdbx"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1555, signature_severity Critical, false_positive Very_Low; sid:9201581; rev:1;)
+
+
+# ============================================================================
+# 05I: TELEGRAM SESSION & MESSAGING CREDENTIAL EXFILTRATION
+# ============================================================================
+# Stealers steal Telegram tdata/, Signal, and other session files.
+# OpenClaw integrates with these platforms → session files are accessible.
+# ============================================================================
+
+# --- Telegram Session Data (tdata) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Telegram Session Data (tdata) in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"tdata"; content:"key_datas"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1539, signature_severity Critical, false_positive Very_Low; sid:9201590; rev:1;)
+
+# --- Telegram Bot Token in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Telegram Bot Token Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"TELEGRAM_BOT_TOKEN"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201591; rev:1;)
+
+# --- Discord Token ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Discord Token Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"DISCORD_TOKEN"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201592; rev:1;)
+
+# --- Slack Token ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Slack Token Exfiltration (xoxb/xoxp)"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/xox[bpars]-[a-zA-Z0-9-]{10,}/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201593; rev:1;)
+
+
+# ============================================================================
+# 05J: SENSITIVE FILE TYPE UPLOAD
+# ============================================================================
+# Upload of sensitive file extensions to external servers.
+# ============================================================================
+
+# --- PEM/KEY/PFX/P12 Certificate Files ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Certificate/Key File Upload (.pem/.key/.pfx)"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/filename[= ]+[\"']?[^\s\"']+\.(pem|key|pfx|p12|crt|cer)\b/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.004, signature_severity Critical, false_positive Low; sid:9201600; rev:1;)
+
+# --- Database Dump Files ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Database Dump File Upload (.sql/.sqlite/.mdf)"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/filename[= ]+[\"']?[^\s\"']+\.(sql|sqlite|sqlite3|mdf|ldf|bak)\b/i"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1005, signature_severity Major, false_positive Low; sid:9201601; rev:1;)
+
+# --- Wallet Files ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Wallet File Upload (.wallet/.dat)"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/filename[= ]+[\"']?[^\s\"']+\.(wallet|dat|kdbx)\b/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Low; sid:9201602; rev:1;)
+
+
+# ============================================================================
+# 05K: ZIP ARCHIVE EXFILTRATION (STEALER STAGING PATTERN)
+# ============================================================================
+# Common stealer behavior: create /tmp/out.zip → send via POST.
+# ============================================================================
+
+# --- ZIP POST to External with Multipart ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - ZIP Archive in Multipart POST (Stealer Staging)"; flow:established,to_server; http.method; content:"POST"; http.header; content:"multipart/form-data"; http.request_body; content:"|50 4b 03 04|"; depth:128; classtype:trojan-activity; priority:1; metadata:mitre_attack T1041, signature_severity Critical, false_positive Low; sid:9201610; rev:1;)
+
+# --- Large POST to Bare IP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Large POST to Bare IP Address (>50KB)"; flow:established,to_server; http.method; content:"POST"; http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/"; http.content_len; pcre:"/^[5-9]\d{4,}|[1-9]\d{5,}/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1041, signature_severity Critical, false_positive Very_Low; sid:9201611; rev:1;)
+
+# --- out.zip Filename in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - AMOS Staging File (out.zip) in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"out.zip"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive Very_Low; sid:9201612; rev:1;)
+
+
+# ============================================================================
+# 05L: IP GEOLOCATION LOOKUP (RECONNAISSANCE PRE-EXFILTRATION)
+# ============================================================================
+# Stealers collect victim IP/location information prior to exfiltration.
+# ============================================================================
+
+# --- ipinfo.io Non-Browser ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - IP Geolocation Lookup via Non-Browser (ipinfo.io)"; flow:established,to_server; http.host; content:"ipinfo.io"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9201620; rev:1;)
+
+# --- ip-api.com Non-Browser ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - IP Geolocation Lookup via Non-Browser (ip-api.com)"; flow:established,to_server; http.host; content:"ip-api.com"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9201621; rev:1;)
+
+# --- api.ip.sb (Vidar/RedLine favorite) ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC EXFIL - api.ip.sb DNS Query (Stealer IP Lookup)"; dns.query; content:"api.ip.sb"; nocase; classtype:trojan-activity; priority:3; metadata:mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9201622; rev:1;)
+
+# --- checkip.amazonaws.com ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - checkip.amazonaws.com Lookup (Non-Browser)"; flow:established,to_server; http.host; content:"checkip.amazonaws.com"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9201623; rev:1;)
+
+
+# ============================================================================
+# 05M: SYSTEM INFORMATION EXFILTRATION
+# ============================================================================
+# Stealers collect and transmit system information prior to exfiltration.
+# ============================================================================
+
+# --- macOS system_profiler Data in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - macOS System Profiler Data in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SPHardwareDataType"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1082, signature_severity Critical, false_positive Very_Low; sid:9201630; rev:1;)
+
+# --- Sysinfo.txt Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC EXFIL - Sysinfo File Content in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"Sysinfo"; content:"OS Version"; distance:0; within:200; classtype:trojan-activity; priority:2; metadata:mitre_attack T1082, signature_severity Major, false_positive Very_Low; sid:9201631; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 05: Data Exfiltration Detection
+# ============================================================================

@@ -1,0 +1,428 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 01: Infostealer C2 Communication
+# File: oc-infostealer-c2.rules
+# SID Range: 9200000 – 9200499
+# Version: 1.0
+# Date: 2026-03-06
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects network-based C2 communication patterns of infostealer
+# families targeting OpenClaw users:
+#
+# - AMOS (Atomic macOS Stealer): Primary payload of the ClawHavoc campaign
+# - Vidar Infostealer: Variants targeting OpenClaw identity files
+# - NovaStealer / Cuckoo Stealer: Emerging macOS stealers
+# - DigitStealer / MacSync: macOS stealers reported by Microsoft
+# - Generic infostealer exfiltration and delivery patterns
+#
+# DEPLOYMENT NOTES
+# ----------------
+# - Applicable to all platforms (macOS, Linux, Windows)
+# - Suricata 6.0+ recommended (http.header, http.uri sticky buffer support)
+# - EXTERNAL_NET: should be set to "any"
+# - HTTP inspection must be active (app-layer.protocols.http.enabled: yes)
+# - TLS inspection: tls.ja3 sticky buffer required for JA3 rules
+#
+# FALSE POSITIVE NOTES
+# --------------------
+# - IOC-based rules (known IP/domain): Near-zero FP
+# - Behavioral rules: Very low FP, follow specified thresholds
+# - Priority 1-2: High confidence, actionable immediately
+# - Priority 3: Requires investigation, do not act on this alone
+#
+# REFERENCES
+# ----------
+# - Trend Micro: "Malicious OpenClaw Skills Used to Distribute AMOS" (Feb 2026)
+# - Koi Security: ClawHavoc Campaign Analysis (Feb 2026)
+# - Censys: "Tracking Vidar Infrastructure" (2023-2026)
+# - Microsoft: "Infostealers Without Borders" (Feb 2026)
+# - Huntress: "AI-Poisoning & AMOS Stealer" (Dec 2025)
+# - Darktrace: "Atomic Stealer Investigation" (Dec 2025)
+# - Gi7w0rm: "AMOS malext variant" (Mar 2026)
+# - Conscia: "The OpenClaw Security Crisis" (Feb 2026)
+# ============================================================================
+
+
+# ============================================================================
+# 01A: AMOS STEALER — KNOWN C2 INFRASTRUCTURE
+# ============================================================================
+# C2 IP addresses and domains used in the ClawHavoc campaign and
+# confirmed by researchers. Zero FP expected.
+# ============================================================================
+
+# --- ClawHavoc Primary C2 Server ---
+# Source: Koi Security, Marco Pedrinazzi (Feb 2026)
+# glot.io script -> curl http://91.92.242.30/[obfuscated-path]
+
+alert ip $HOME_NET any -> [91.92.242.0/24] any (msg:"CGTI-OC AMOS - ClawHavoc Primary C2 Network Range (91.92.242.0/24)"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1041, signature_severity Critical, false_positive None, deployment_note Known ClawHavoc C2 subnet; reference:url,medium.com/@pedrinazzim/clawhavoc-pivot-amos-stealer-delivered-via-clawhub-skill-page-comments; sid:9200001; rev:1;)
+
+# --- ClawHavoc Reverse Shell Server ---
+# Source: InsiderLLM, Koi Security (Feb 2026)
+# Reverse shell target in better-polymarket and polymarket-all-in-one skills
+alert ip $HOME_NET any -> 54.91.154.110 any (msg:"CGTI-OC AMOS - ClawHavoc Reverse Shell C2 (54.91.154.110)"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive None; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; sid:9200002; rev:1;)
+
+# --- AMOS malext Variant Primary C2 ---
+# Source: Gi7w0rm (Mar 2026) - malvertising campaign
+alert ip $HOME_NET any -> 38.244.158.56 any (msg:"CGTI-OC AMOS - malext Variant Primary C2 (38.244.158.56)"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign malext, affected_product macOS, mitre_attack T1041, signature_severity Critical, false_positive None; reference:url,gi7w0rm.medium.com/amos-stealer-malext-variant; sid:9200003; rev:1;)
+
+# --- AMOS malext Variant Fallback C2 ---
+# Source: Gi7w0rm (Mar 2026) - exfiltration retry fallback
+alert ip $HOME_NET any -> 199.217.98.33 any (msg:"CGTI-OC AMOS - malext Variant Fallback C2 (199.217.98.33)"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign malext, affected_product macOS, mitre_attack T1041, signature_severity Critical, false_positive None; reference:url,gi7w0rm.medium.com/amos-stealer-malext-variant; sid:9200004; rev:1;)
+
+# --- AMOS malext C2 Domain ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC AMOS - malext C2 Domain DNS Lookup (malext.com)"; dns.query; content:"malext.com"; nocase; endswith; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign malext, mitre_attack T1071.001, signature_severity Critical, false_positive None; sid:9200005; rev:1;)
+
+
+# ============================================================================
+# 01B: AMOS STEALER — EXFILTRATION PATTERNS
+# ============================================================================
+# AMOS data exfiltration patterns: ZIP archive creation and HTTP POST
+# to C2 server. Uses very specific header combinations.
+# ============================================================================
+
+# --- AMOS Exfiltration: ZIP POST with BuildID Header ---
+# AMOS POSTs via curl: custom headers contain "BuildID" and "user:"
+# Source: Detection.FYI Sigma rule, Trend Micro MDR Analysis
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - ZIP Exfiltration with BuildID Header"; flow:established,to_server; http.method; content:"POST"; http.header; content:"BuildID"; content:"user:"; content:"cl:|20|0"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive None, deployment_note AMOS exfiltration header combination is unique; sid:9200010; rev:1;)
+
+# --- AMOS Exfiltration: out.zip Upload ---
+# AMOS compresses collected data as /tmp/out.zip and POSTs it
+# Source: Trend Micro, Huntress (2025-2026)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Staged Data Exfiltration (out.zip POST)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"out.zip"; http.header; content:"multipart/form-data"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive Very_Low, deployment_note out.zip is AMOS standard staging filename; sid:9200011; rev:1;)
+
+# --- AMOS Exfiltration: file=@/tmp/out.zip in POST Body ---
+# curl -X POST ... -F "file=@/tmp/out.zip" pattern
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - curl File Upload from tmp (file=@/tmp/)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"file=@/tmp/"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Major, false_positive Very_Low; sid:9200012; rev:1;)
+
+# --- AMOS Exfiltration: Large ZIP POST to Non-Standard Port ---
+# Large POST body starting with ZIP magic bytes, to non-standard port
+alert http $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC STEALER - ZIP Archive POST to Non-Standard Port"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"|50 4b 03 04|"; depth:4; http.content_len; content:"100"; byte_test:0,>,100000,0,string; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200013; rev:1;)
+
+# --- AMOS RAT Beacon: 60-Second Polling ---
+# AMOS upgraded variant: HTTP POST beacon to C2 every 60 seconds
+# Source: GBHackers, Moonlock Lab (Jul 2025)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - RAT Beacon Polling Pattern"; flow:established,to_server; http.method; content:"POST"; http.header; content:"application/x-www-form-urlencoded"; threshold:type both, track by_src, count 5, seconds 360; classtype:trojan-activity; priority:3; metadata:malware_family AMOS_RAT, mitre_attack T1071.001, signature_severity Informational, false_positive Medium, deployment_note Requires investigation - beacon pattern may overlap with legitimate apps; sid:9200014; rev:1;)
+
+
+# ============================================================================
+# 01C: AMOS STEALER — DELIVERY INFRASTRUCTURE
+# ============================================================================
+# AMOS delivery mechanisms: ClawHavoc skills, ClickFix, malvertising
+# ============================================================================
+
+# --- ClawHavoc: glot.io Script Fetch (Primary Delivery) ---
+# ClawHavoc skills: download base64 script from glot.io as prerequisite
+# Source: Koi Security, InsiderLLM
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - glot.io Payload Script Download"; flow:established,to_server; http.host; content:"glot.io"; http.method; content:"GET"; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, campaign ClawHavoc, mitre_attack T1195.002, signature_severity Major, false_positive Low, deployment_note glot.io is a code-sharing platform abused for payload hosting; sid:9200020; rev:1;)
+
+# --- AMOS DMG Download: Non-Browser User-Agent ---
+# macOS installer (.dmg) download with non-browser User-Agent
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - DMG Download via Non-Browser UA (curl/wget)"; flow:established,to_server; http.method; content:"GET"; http.uri; content:".dmg"; endswith; http.user_agent; content:"curl"; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1204.002, signature_severity Major, false_positive Low; sid:9200021; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - DMG Download via wget"; flow:established,to_server; http.method; content:"GET"; http.uri; content:".dmg"; endswith; http.user_agent; content:"Wget"; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1204.002, signature_severity Major, false_positive Low; sid:9200022; rev:1;)
+
+# --- Mach-O Binary Direct Download ---
+# Universal Mach-O binary download: magic bytes CF FA ED FE (64-bit) or
+# CA FE BA BE (universal/fat binary)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Mach-O Universal Binary Download (Fat Header)"; flow:established,to_client; http.response_body; content:"|ca fe ba be|"; depth:4; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1204.002, signature_severity Major, false_positive Low, deployment_note AMOS binary is typically ~521KB universal Mach-O; sid:9200023; rev:1;)
+
+# --- Mach-O 64-bit Binary Download via HTTP (non-browser) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Mach-O 64-bit Binary Download via curl"; flow:established; http.response_body; content:"|cf fa ed fe|"; depth:4; http.user_agent; content:"curl"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_macOS_Stealer, mitre_attack T1105, signature_severity Major, false_positive Low; sid:9200024; rev:1;)
+
+# --- AMOS: Gatekeeper Bypass Download Chain ---
+# Execution after Gatekeeper bypass with xattr -c command; network-visible pattern:
+# curl download -> immediately followed by download from same host different path
+# This rule: catches base64 encoded script download
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Base64 Encoded Shell Script Download"; flow:established,to_client; http.response_body; content:"#!/bin/bash"; depth:20; content:"base64"; distance:0; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1059.004, signature_severity Major, false_positive Low; sid:9200025; rev:1;)
+
+# --- curl pipe to bash Pattern (ClickFix / ClawHavoc) ---
+# HTTP response returns shell script, to be executed via curl | bash
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Shell Script Response to curl Request"; flow:established; http.user_agent; content:"curl"; http.response_body; content:"#!/bin/"; depth:10; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, campaign ClawHavoc, mitre_attack T1059.004, signature_severity Major, false_positive Low; sid:9200026; rev:1;)
+
+# --- AuthTool Download (Social Engineering Binary) ---
+# ClawHavoc: skill downloads fake tool called AuthTool as "prerequisite"
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - AuthTool Social Engineering Binary Download"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"AuthTool"; nocase; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign ClawHavoc, mitre_attack T1204.002, signature_severity Critical, false_positive Very_Low; sid:9200027; rev:1;)
+
+# --- openclaw-agent Fake Package Download ---
+# ClawHavoc: fake dependency called "openclaw-agent"
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Fake openclaw-agent Package Download"; flow:established,to_server; http.uri; content:"openclaw-agent"; nocase; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9200028; rev:1;)
+
+# --- AMOS: Backdoored Ledger Live Download ---
+# AMOS downloads trojanized Ledger Live after exfiltration
+# Source: Trend Micro, Gi7w0rm (2026)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Potential Backdoored Ledger Live Download"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"ledger"; nocase; content:".dmg"; endswith; http.user_agent; content:"curl"; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1195.002, signature_severity Major, false_positive Low, deployment_note Legitimate Ledger downloads use ledger.com domain; sid:9200029; rev:1;)
+
+# --- AMOS: Backdoored Trezor Suite Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Potential Backdoored Trezor Suite Download"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"trezor"; nocase; content:".dmg"; endswith; http.user_agent; content:"curl"; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1195.002, signature_severity Major, false_positive Low; sid:9200030; rev:1;)
+
+
+# ============================================================================
+# 01D: VIDAR STEALER — C2 COMMUNICATION PATTERNS
+# ============================================================================
+# Vidar's characteristic network patterns: C2 resolve via Telegram/Steam/Mastodon,
+# empty User-Agent, campaign-ID-based URI structure.
+# Source: Censys, Darktrace, Ontinue (2023-2026)
+# ============================================================================
+
+# --- Vidar: Telegram C2 Resolve ---
+# Vidar first connects to a Telegram profile page to retrieve the C2 address
+# The IP/domain is hidden in the profile description
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Telegram Profile C2 Resolve"; flow:established,to_server; http.host; content:"t.me"; http.method; content:"GET"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1102.001, signature_severity Major, false_positive Low, deployment_note Non-browser access to t.me profiles is suspicious; sid:9200040; rev:1;)
+
+# --- Vidar: Steam Profile C2 Resolve ---
+# Backup C2 distribution mechanism: Steam community profile page
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Steam Profile C2 Resolve"; flow:established,to_server; http.host; content:"steamcommunity.com"; http.uri; content:"/profiles/"; http.user_agent; content:!"Mozilla"; content:!"Valve"; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1102.001, signature_severity Major, false_positive Low; sid:9200041; rev:1;)
+
+# --- Vidar: Mastodon Profile C2 Resolve ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Mastodon Profile C2 Resolve (Non-Browser)"; flow:established,to_server; http.host; content:"mastodon"; http.uri; content:"/@"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1102.001, signature_severity Major, false_positive Low; sid:9200042; rev:1;)
+
+# --- Vidar: Empty User-Agent C2 Request ---
+# Vidar uses empty User-Agent and empty Host header when doing GET to C2
+# URI contains 4-digit campaign ID (e.g. /1234)
+# Source: Darktrace, Stamus Networks
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Empty UA Campaign ID Request (4-digit URI)"; flow:established,to_server; http.method; content:"GET"; http.uri; pcre:"/^\/\d{4}$/"; http.user_agent; bsize:0; classtype:trojan-activity; priority:1; metadata:malware_family Vidar, mitre_attack T1071.001, signature_severity Critical, false_positive Very_Low, deployment_note 4-digit URI with empty UA is Vidar fingerprint; sid:9200043; rev:1;)
+
+# --- Vidar: DLL ZIP Download ---
+# Vidar downloads legitimate DLLs (vcruntime140.dll etc.) as ZIP from C2
+# URI in 10-digit-number.zip format
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - DLL Package Download (10-digit ZIP)"; flow:established,to_server; http.method; content:"GET"; http.uri; pcre:"/^\/\d{10}\.zip$/"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar, mitre_attack T1105, signature_severity Critical, false_positive Very_Low; sid:9200044; rev:1;)
+
+# --- Vidar: Multipart Form Data Exfiltration ---
+# Vidar sends stolen data via multipart form data POST
+# Large POST body with empty UA
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Multipart Exfiltration with Empty UA"; flow:established,to_server; http.method; content:"POST"; http.header; content:"multipart/form-data"; http.user_agent; bsize:0; classtype:trojan-activity; priority:1; metadata:malware_family Vidar, mitre_attack T1041, signature_severity Critical, false_positive Very_Low; sid:9200045; rev:1;)
+
+# --- Vidar: TLS Certificate Fingerprint ---
+# Vidar C2 servers use characteristic self-signed TLS certificate
+# Subject DN: C=XX, ST=NY, L=NY, O=StaticIP, OU=privateIP
+# Source: Censys
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - C2 TLS Certificate Fingerprint (StaticIP/privateIP)"; tls.cert_subject; content:"O=StaticIP"; content:"OU=privateIP"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar, mitre_attack T1573.002, signature_severity Critical, false_positive None; reference:url,censys.com/blog/tracking-vidar-infrastructure; sid:9200046; rev:1;)
+
+# --- Vidar: Bot ID in HTTP Header ---
+# Vidar uses bot ID hash in communication
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Bot ID in POST Header"; flow:established,to_server; http.method; content:"POST"; http.header; pcre:"/hwid=[a-f0-9]{32}/i"; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200047; rev:1;)
+
+# --- Vidar 2.0: Azure Credential Exfiltration ---
+# Vidar 2.0 targets Azure credentials and MSAL token cache
+# Source: Ontinue (Nov 2025)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Azure Credential Data in POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"AzureReader"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_v2, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200048; rev:1;)
+
+
+# ============================================================================
+# 01E: DIGITSTEALER / MACSYNC — macOS STEALER PATTERNS
+# ============================================================================
+# macOS-specific stealer families reported by Microsoft
+# Source: Microsoft Defender Experts (Feb 2026)
+# ============================================================================
+
+# --- DigitStealer: API Endpoint Exfiltration ---
+# DigitStealer POSTs to C2 APIs via curl: /api/credentials, /api/grabber, /api/log
+# Contains hwid= parameter
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC DIGITSTEALER - Credential API Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/api/credentials"; http.header; content:"hwid="; classtype:trojan-activity; priority:1; metadata:malware_family DigitStealer, mitre_attack T1041, signature_severity Critical, false_positive Very_Low; reference:url,microsoft.com/en-us/security/blog/2026/02/02/infostealers-without-borders; sid:9200060; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC DIGITSTEALER - Grabber API Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/api/grabber"; http.header; content:"hwid="; classtype:trojan-activity; priority:1; metadata:malware_family DigitStealer, mitre_attack T1041, signature_severity Critical, false_positive Very_Low; sid:9200061; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC DIGITSTEALER - Log API Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/api/log"; http.header; content:"hwid="; classtype:trojan-activity; priority:1; metadata:malware_family DigitStealer, mitre_attack T1041, signature_severity Critical, false_positive Very_Low; sid:9200062; rev:1;)
+
+# --- MacSync: curl POST with api-key Header ---
+# MacSync exfiltration: curl -k -X POST -H "api-key: ..." pattern
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MACSYNC - API Key Based Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.header; content:"api-key:"; http.user_agent; content:"curl"; classtype:trojan-activity; priority:2; metadata:malware_family MacSync, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200063; rev:1;)
+
+
+# ============================================================================
+# 01F: GENERIC STEALER EXFILTRATION PATTERNS
+# ============================================================================
+# Network-based exfiltration patterns common to all infostealer families.
+# Provides high-value detection in the OpenClaw context.
+# ============================================================================
+
+# --- Telegram Bot API Data Exfiltration ---
+# Many stealers (PXA, AMOS variants) exfiltrate data via Telegram Bot API
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendDocument)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendDocument"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Critical, false_positive Low, deployment_note Legitimate bots also use this API - correlate with other indicators; sid:9200070; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendMessage)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendMessage"; threshold:type both, track by_src, count 10, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low; sid:9200071; rev:1;)
+
+# --- Discord Webhook Exfiltration ---
+# Stealers send stolen data via Discord webhook
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Discord Webhook Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.host; content:"discord.com"; http.uri; content:"/api/webhooks/"; http.header; content:"multipart/form-data"; threshold:type both, track by_src, count 5, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low, deployment_note May trigger on legitimate Discord bots with file uploads; sid:9200072; rev:1;)
+
+# --- Generic: ZIP Archive Exfiltration to Rare Domain ---
+# Common stealer behavior: POST collected data as ZIP to unknown server
+# FP reduced via threshold
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - ZIP Archive POST Exfiltration (Generic)"; flow:established,to_server; http.method; content:"POST"; http.header; content:"multipart/form-data"; http.request_body; content:"|50 4b 03 04|"; depth:128; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low, deployment_note ZIP magic bytes in multipart POST body; sid:9200073; rev:1;)
+
+
+# ============================================================================
+# 01G: OPENCLAW-SPECIFIC CREDENTIAL EXFILTRATION
+# ============================================================================
+# Detection of credential exfiltration from OpenClaw agent identity files
+# and connected services. Vidar's OpenClaw-specific variant targets these files.
+# Source: Hudson Rock (Feb 2026)
+# ============================================================================
+
+# --- OpenClaw Config File Exfiltration ---
+# Sending openclaw.json, device.json files to external server
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Config File Exfiltration (openclaw.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"openclaw.json"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low, deployment_note openclaw.json contains agent identity and auth tokens; sid:9200080; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Device File Exfiltration (device.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"device.json"; content:"openclaw"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200081; rev:1;)
+
+# --- OpenClaw SOUL.md / MEMORY.md Exfiltration ---
+# Agent's persistent memory files — target for prompt injection and memory poisoning
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw SOUL.md Memory Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SOUL.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200082; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw MEMORY.md Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MEMORY.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200083; rev:1;)
+
+# --- SSH Key Exfiltration ---
+# id_rsa, id_ed25519, id_ecdsa private key exfiltration
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SSH Private Key Exfiltration (RSA)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"-----BEGIN"; content:"PRIVATE KEY-----"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.004, signature_severity Critical, false_positive Very_Low; sid:9200084; rev:1;)
+
+# --- AWS Credentials Exfiltration ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - AWS Credentials Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"aws_access_key_id"; nocase; content:"aws_secret_access_key"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200085; rev:1;)
+
+# --- .env File Exfiltration ---
+# Exfiltration of .env files containing API keys, tokens, secrets
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Environment File with API Keys Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"API_KEY="; content:"SECRET"; distance:0; within:500; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1552.001, signature_severity Major, false_positive Low; sid:9200086; rev:1;)
+
+# --- Keychain Data Exfiltration (macOS) ---
+# Sending macOS Keychain database or dump to external server
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Keychain Database Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"login.keychain"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1555.001, signature_severity Critical, false_positive Very_Low; sid:9200087; rev:1;)
+
+# --- Telegram Session Exfiltration ---
+# Telegram session files (tdata/) exfiltration
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Session Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"tdata"; content:"key_datas"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1539, signature_severity Critical, false_positive Very_Low; sid:9200088; rev:1;)
+
+
+# ============================================================================
+# 01H: STEALER C2 BEACON — BEHAVIORAL PATTERNS
+# ============================================================================
+# Common C2 beacon behaviors across infostealer families.
+# These rules carry higher FP risk and are managed via thresholds.
+# ============================================================================
+
+# --- IP Lookup Service (Reconnaissance) ---
+# Stealers use services like ipinfo/ipapi to learn victim's IP
+# Source: Redline, Vidar, AMOS common behavior
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC STEALER - IP Lookup Service DNS Query (api.ip.sb)"; dns.query; content:"api.ip.sb"; nocase; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium, deployment_note May trigger on legitimate IP lookup - correlate with other stealer indicators; sid:9200090; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP Geolocation API via Non-Browser UA"; flow:established,to_server; http.host; content:"ipinfo.io"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200091; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP API Lookup via Non-Browser UA"; flow:established,to_server; http.host; content:"ip-api.com"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200092; rev:1;)
+
+# --- Browser Database File Content in POST ---
+# Detection of Chrome/Firefox/Safari cookie/password database content in POST body
+# SQLite header: "SQLite format 3" (0x53 51 4c 69 74 65 20 66 6f 72 6d 61 74 20 33)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SQLite Database in HTTP POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SQLite format 3"; depth:20; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1555.003, signature_severity Critical, false_positive Very_Low, deployment_note SQLite DB in POST body is strong stealer indicator; sid:9200093; rev:1;)
+
+# --- Crypto Wallet Seed Phrase Pattern ---
+# Detection of 12/24 word seed phrase (BIP39) exfiltration
+# Seed phrase format: space-separated lowercase words
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Potential Crypto Seed Phrase Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b.{1,200}\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b/i"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note BIP39 seed words in POST body; sid:9200094; rev:1;)
+
+
+# ============================================================================
+# 01I: STEALER PANEL & MaaS INFRASTRUCTURE
+# ============================================================================
+# Stealer-as-a-Service infrastructure: panel endpoints, log upload
+# ============================================================================
+
+# --- Generic Stealer Panel: /gate.php Endpoint ---
+# Many stealer families (Raccoon, Vidar variants) use /gate.php C2 endpoint
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - C2 Gate Endpoint POST (gate.php)"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/gate.php"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200100; rev:1;)
+
+# --- Stealer Panel: /collect or /upload Endpoint ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - C2 Collect Endpoint POST"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/collect"; http.header; content:"multipart/form-data"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200101; rev:1;)
+
+# --- Stealer: Sysinfo.txt in POST Body ---
+# AMOS and other stealers collect and send system info as Sysinfo.txt
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - System Info File Exfiltration (Sysinfo)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"Sysinfo"; content:"macOS"; distance:0; within:500; classtype:trojan-activity; priority:2; metadata:malware_family AMOS, mitre_attack T1082, signature_severity Major, false_positive Very_Low; sid:9200102; rev:1;)
+
+# --- PXA Stealer: Python-Based Exfiltration ---
+# PXA stealer POSTs with Python user-agent
+# Source: Microsoft (2026)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Python UA Data Exfiltration POST"; flow:established,to_server; http.method; content:"POST"; http.user_agent; content:"python-requests"; http.header; content:"multipart/form-data"; classtype:trojan-activity; priority:2; metadata:malware_family PXA_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200103; rev:1;)
+
+# --- Stealer: FileGrabber in POST Body ---
+# AMOS FileGrabber module collects files from /tmp directory
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - FileGrabber Module Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"FileGrabber"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1005, signature_severity Critical, false_positive Very_Low; sid:9200104; rev:1;)
+
+
+# ============================================================================
+# 01J: STEALER EVASION & ANTI-ANALYSIS NETWORK INDICATORS
+# ============================================================================
+# Network indicators of stealer sandbox/VM detection and evasion mechanisms
+# ============================================================================
+
+# --- system_profiler Network Callback ---
+# AMOS runs system_profiler for sandbox/VM detection
+# If VM detected, network activity stops — this rule catches
+# ongoing exfiltration after VM check (VM check failed = real victim)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - System Profiler Data in Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SPHardwareDataType"; content:"serial_number"; distance:0; within:300; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1082, signature_severity Critical, false_positive Very_Low, deployment_note macOS system profiler data in POST body is highly suspicious; sid:9200110; rev:1;)
+
+
+# ============================================================================
+# 01K: EMERGING STEALER FAMILIES (2025-2026)
+# ============================================================================
+# Emerging stealer families potentially targeting OpenClaw users
+# ============================================================================
+
+# --- Cuckoo Stealer: macOS Variant ---
+# macOS stealer spread via ClickFix delivery
+# LaunchAgent persistence, similar exfiltration pattern
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - macOS LaunchAgent Persistence Download"; flow:established,to_client; http.response_body; content:"com.finder.helper"; content:"LaunchDaemon"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family AMOS_Cuckoo, mitre_attack T1543.001, signature_severity Critical, false_positive Very_Low, deployment_note com.finder.helper is known AMOS persistence mechanism; sid:9200120; rev:1;)
+
+# --- NovaStealer Patterns ---
+# New stealer distributed alongside AMOS
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - NovaStealer POST Pattern"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/nova"; http.header; content:"multipart/form-data"; classtype:trojan-activity; priority:2; metadata:malware_family NovaStealer, mitre_attack T1041, signature_severity Major, false_positive Low; sid:9200121; rev:1;)
+
+# --- Lumma Stealer (Fallback) ---
+# Increased Lumma Stealer usage during Vidar operational issues
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Lumma C2 POST Pattern (c2conf)"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/c2conf"; classtype:trojan-activity; priority:2; metadata:malware_family Lumma, mitre_attack T1041, signature_severity Major, false_positive Very_Low; sid:9200122; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Lumma C2 POST Pattern (c2sock)"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/c2sock"; classtype:trojan-activity; priority:2; metadata:malware_family Lumma, mitre_attack T1041, signature_severity Major, false_positive Very_Low; sid:9200123; rev:1;)
+
+# ── 01L: GhostClaw/GhostLoader RAT (JFrog, March 2026) ─────────────────────
+# npm package @openclaw-ai/openclawai deploys GhostLoader — a multi-stage
+# infostealer+RAT that steals credentials, crypto wallets, SSH keys, browser
+# data, Apple Keychain, and establishes persistent C2 with SOCKS5 proxy.
+# Source: JFrog Security Research — "GhostClaw Unmasked" (8 Mar 2026)
+# C2: trackpipe[.]dev (payload download + data exfiltration)
+# Exfil: gofile.io (large archives), Telegram Bot API (small archives)
+
+# GhostClaw TLS connection to C2 panel
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - TLS Connection to trackpipe.dev C2 Panel (GhostLoader RAT)"; flow:to_server,established; tls.sni; content:"trackpipe.dev"; nocase; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9200124; rev:1; metadata:malware_family GhostClaw, mitre_attack T1071.001, signature_severity Critical, false_positive Zero, created_at 2026_03_17;)
+
+# GhostClaw HTTP beacon/exfil to C2 panel
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - HTTP Upload to trackpipe.dev (GhostLoader Data Exfiltration)"; flow:established,to_server; http.host; content:"trackpipe.dev"; nocase; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9200125; rev:1; metadata:malware_family GhostClaw, mitre_attack T1041, signature_severity Critical, false_positive Zero, created_at 2026_03_17;)
+
+# GhostClaw bootstrap payload request (specific URI pattern)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - Bootstrap Payload Request to trackpipe.dev/t/bootstrap"; flow:established,to_server; http.host; content:"trackpipe.dev"; http.uri; content:"/t/bootstrap"; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9200126; rev:1; metadata:malware_family GhostClaw, mitre_attack T1105, signature_severity Critical, false_positive Zero, created_at 2026_03_17;)
+
+# GhostClaw fake npm package install detection
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - Malicious npm Package @openclaw-ai/openclawai Download"; flow:established,to_server; http.host; content:"registry.npmjs.org"; http.uri; content:"openclaw-ai"; content:"openclawai"; distance:0; within:30; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9200127; rev:1; metadata:malware_family GhostClaw, mitre_attack T1195.002, signature_severity Critical, false_positive Zero, created_at 2026_03_17;)
+
+# GhostClaw GoFile.io large archive exfiltration with password locking
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - GoFile.io Archive Upload (GhostLoader Bulk Exfil)"; flow:established,to_server; http.host; content:"gofile.io"; http.method; content:"POST"; http.content_type; content:"multipart/form-data"; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9200128; rev:1; metadata:malware_family GhostClaw, mitre_attack T1041, signature_severity Critical, false_positive Low, created_at 2026_03_17;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 01: Infostealer C2 Communication
+# ============================================================================
+# Total Rules: 67
+# SID Range Used: 9200001 – 9200128
+# Next Available SID: 9200129
+#
+# VALIDATION:
+# grep -c '^alert ' oc-infostealer-c2.rules
+# grep -oP 'sid:\d+' oc-infostealer-c2.rules | sort -t: -k2 -n | uniq -d
+# (should return empty — no duplicate SIDs)
+#
+# UPDATE POLICY:
+# - IOC-based rules (01A): Updated as new C2 infrastructure is discovered
+# - Behavioral rules (01B-01K): Updated on major stealer variant changes
+# - Threshold values: Adjusted based on community FP feedback
+# ============================================================================

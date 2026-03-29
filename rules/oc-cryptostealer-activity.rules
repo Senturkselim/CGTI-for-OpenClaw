@@ -1,0 +1,232 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 07: Cryptostealer Activity Detection
+# File: oc-cryptostealer-activity.rules
+# SID Range: 9202300 – 9202599
+# Version: 1.0
+# Date: 2026-03-07
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects network-based attacks targeting crypto assets of
+# OpenClaw users. More than 100 ClawHavoc campaign skills
+# were disguised as crypto tools (Solana wallet, Phantom, Polymarket).
+# AMOS stealer targets 60+ crypto wallets and 50+ browser extensions.
+#
+# Threat profile:
+# - ClawHavoc: 111 crypto skills, 34 Polymarket, 28 Phantom wallet
+# - AMOS: Replaces Ledger Live and Trezor Suite with trojanized versions
+# - Crypto wallet seed phrase (BIP39) exfiltration
+# - Exchange API key theft (ByBit, Binance, Coinbase)
+# - Browser extension data theft (MetaMask, Phantom, Exodus, Trust Wallet)
+# - Clipper malware: replaces the crypto address in the clipboard with the attacker's
+# - Cryptomining: Stratum protocol, XMRig
+# - DeFi approval scam: unlimited token approval
+#
+# OpenClaw crypto context:
+# - Users run agents 24/7 on Mac Mini homelabs
+# - Agents can directly interact with Polygon and Solana networks
+# - Arbitrage and prediction market strategies in active use
+# - Crypto users are the highest-value target profile
+#
+# REFERENCES
+# ----------
+# - Koi Security: ClawHavoc skill categories (111 crypto, 34 Polymarket)
+# - Trend Micro: "AMOS via OpenClaw Skills" (Feb 2026) — Ledger/Trezor backdoor
+# - Huntress: "AMOS Stealer ChatGPT Grok" (Dec 2025) — 45.94.47.186 C2
+# - BleepingComputer: "AMOS targets 50 crypto wallets" (Apr 2023)
+# - CryptoNewsZ: "ClawHub 1,184 malicious skills" (Feb 2026)
+# - AInvest: "$100M+ Crypto Theft Risk" (Feb 2026)
+# - Gi7w0rm: AMOS malext variant — Ledger/Trezor backdoor (Mar 2026)
+# ============================================================================
+
+
+# ============================================================================
+# 07A: CRYPTO WALLET DATA EXFILTRATION
+# ============================================================================
+# Exfiltration of crypto wallet data by AMOS and other stealers.
+# Targets: MetaMask, Phantom, Exodus, Electrum, Coinbase Wallet,
+# Trust Wallet, Atomic Wallet, Coinomi, Solflare, Ledger Live, Trezor
+# ============================================================================
+
+# --- MetaMask Vault Data Exfiltration ---
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - MetaMask Vault Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MetaMask"; content:"vault"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202300; rev:1;)
+
+# --- Phantom Wallet Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Phantom Wallet Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"phantom"; nocase; content:"wallet"; nocase; distance:0; within:20; content:"key"; nocase; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Low; sid:9202301; rev:1;)
+
+# --- Exodus Wallet Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Exodus Wallet Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"exodus"; nocase; content:"passphrase"; nocase; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202302; rev:1;)
+
+# --- Electrum Wallet Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Electrum Wallet Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"electrum"; nocase; content:"wallet"; nocase; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Low; sid:9202303; rev:1;)
+
+# --- Generic Wallet Extension ID Data in POST ---
+# AMOS targets 50+ browser extension IDs (XOR encrypted)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Browser Crypto Extension Data in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"nkbihfbeogaeaoehlefnkodbefgpgknn"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note nkbihfbeogaeaoehlefnkodbefgpgknn is MetaMask Chrome extension ID; sid:9202304; rev:1;)
+
+# --- Coinbase Wallet Extension Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Coinbase Wallet Extension Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"hnfanknocfeofbddgcijnmhnfnkdnaad"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note Coinbase Wallet Chrome extension ID; sid:9202305; rev:1;)
+
+# --- TronLink Extension Data ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - TronLink Extension Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"ibnejdfjmmkpcnlpebklmnkoeoihofec"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note TronLink Chrome extension ID; sid:9202306; rev:1;)
+
+# --- Solflare Wallet Extension ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Solflare Wallet Extension Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"bhhhlbepdkbapadjdnnojkbgioiodbic"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note Solflare Chrome extension ID; sid:9202307; rev:1;)
+
+
+# ============================================================================
+# 07B: SEED PHRASE / PRIVATE KEY EXFILTRATION
+# ============================================================================
+# Exfiltration of BIP39 seed phrases (12/24 words) and private key formats
+# over the network. The most critical indicator of crypto theft.
+# ============================================================================
+
+# --- BIP39 Seed Phrase Pattern in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - BIP39 Seed Phrase Pattern in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual)\b.{1,400}\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual)\b/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202310; rev:1;)
+
+# --- Private Key Hex Format (Ethereum 64-char hex) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Ethereum Private Key Hex in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/private[_\s]?key[\"':=\s]+[0-9a-fA-F]{64}/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202311; rev:1;)
+
+# --- Solana Private Key (Base58) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Solana Private Key Pattern in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/private[_\s]?key[\"':=\s]+[1-9A-HJ-NP-Za-km-z]{87,88}/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202312; rev:1;)
+
+# --- Keystore/Keyfile JSON Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Ethereum Keystore JSON Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"crypto"; content:"ciphertext"; distance:0; within:100; content:"kdf"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Very_Low; sid:9202313; rev:1;)
+
+
+# ============================================================================
+# 07C: BACKDOORED WALLET APPLICATION DOWNLOAD
+# ============================================================================
+# After exfiltration, AMOS downloads trojanized Ledger Live and Trezor Suite.
+# These fake applications prompt the user to enter their seed phrase ("security verification").
+# Source: Trend Micro, Gi7w0rm, Moonlock Lab
+# ============================================================================
+
+# --- Trojanized Ledger Live Download (Non-Official Domain) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Potential Trojanized Ledger Live Download (Non-Official)"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"ledger"; nocase; pcre:"/\.(dmg|exe|zip|app|pkg)$/i"; http.host; content:!"ledger.com"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1195.002, signature_severity Critical, false_positive Low, deployment_note Legitimate Ledger downloads only from ledger.com; sid:9202320; rev:1;)
+
+# --- Trojanized Trezor Suite Download (Non-Official Domain) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Potential Trojanized Trezor Suite Download (Non-Official)"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"trezor"; nocase; pcre:"/\.(dmg|exe|zip|app|pkg)$/i"; http.host; content:!"trezor.io"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1195.002, signature_severity Critical, false_positive Low; sid:9202321; rev:1;)
+
+# --- Ledger Live Binary Replacement Network Activity ---
+# AMOS downloads a trojanized Ledger Live and replaces the real app
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Ledger Live DMG from Bare IP (Backdoor Download)"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"Ledger"; content:".dmg"; distance:0; within:20; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9202322; rev:1;)
+
+
+# ============================================================================
+# 07D: CRYPTO EXCHANGE API KEY THEFT
+# ============================================================================
+# OpenClaw skills target crypto exchange API keys.
+# Stolen API keys can be used to perform automated withdrawals.
+# ClawHavoc: skills disguised as ByBit, Binance, Coinbase, Kraken
+# ============================================================================
+
+# --- Exchange API Key Pattern in POST ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Exchange API Key+Secret Pair in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"api_key"; nocase; content:"api_secret"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Low; sid:9202330; rev:1;)
+
+# --- Binance API Key Exfiltration ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Binance API Key in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"BINANCE"; nocase; content:"API"; nocase; distance:0; within:10; content:"KEY"; nocase; distance:0; within:10; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202331; rev:1;)
+
+# --- Coinbase API Credential ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Coinbase API Credential in POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"COINBASE"; nocase; content:"SECRET"; nocase; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202332; rev:1;)
+
+# --- Unauthorized Withdrawal Request to Exchange API ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Potential Unauthorized Withdrawal via Exchange API"; flow:established,to_server; http.method; content:"POST"; http.uri; pcre:"/(withdraw|transfer|send)/i"; http.host; pcre:"/(binance|coinbase|kraken|bybit|okx|kucoin|gate\.io)/i"; http.request_body; content:"amount"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1657, signature_severity Informational, false_positive High, deployment_note Legitimate crypto trading skills trigger this rule - correlate with other theft indicators before acting; sid:9202333; rev:2;)
+
+
+# ============================================================================
+# 07E: CRYPTOMINING DETECTION
+# ============================================================================
+# Cryptomining via a compromised OpenClaw instance.
+# Stratum mining protocol (port 3333/4444/14444) is a very distinctive indicator.
+# ============================================================================
+
+# --- Stratum Mining Protocol (JSON-RPC) ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Stratum Mining Protocol (mining.subscribe)"; flow:established,to_server; content:"mining.subscribe"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202340; rev:1;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Stratum Mining Protocol (mining.authorize)"; flow:established,to_server; content:"mining.authorize"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202341; rev:1;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Stratum Mining Submit"; flow:established,to_server; content:"mining.submit"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202342; rev:1;)
+
+# --- Default Mining Ports ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET [3333,4444,5555,7777,8888,9999,14444,14433] (msg:"CGTI-OC CRYPTO - Outbound to Common Mining Pool Port"; flow:to_server; content:"mining"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202343; rev:1;)
+
+# --- XMRig User-Agent ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - XMRig Miner User-Agent Detected"; flow:established,to_server; http.user_agent; content:"XMRig"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202344; rev:1;)
+
+# --- Known Mining Pool Domains ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (pool.minexmr)"; dns.query; content:"minexmr"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202345; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (xmrpool.eu)"; dns.query; content:"xmrpool"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202346; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (nanopool)"; dns.query; content:"nanopool"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202347; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (hashvault)"; dns.query; content:"hashvault"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202348; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (2miners)"; dns.query; content:"2miners"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202349; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (supportxmr)"; dns.query; content:"supportxmr"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202350; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Mining Pool DNS Query (herominers)"; dns.query; content:"herominers"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202351; rev:1;)
+
+# --- Stratum+TLS (Encrypted Mining) ---
+alert tls $HOME_NET any -> $EXTERNAL_NET [3333,4444,14433,14444] (msg:"CGTI-OC CRYPTO - TLS Connection to Mining Pool Port"; tls.sni; pcre:"/(pool|mine|xmr|monero|crypto)/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1496, signature_severity Critical, false_positive Very_Low; sid:9202352; rev:1;)
+
+
+# ============================================================================
+# 07F: WALLET FILE EXFILTRATION (.wallet, .dat, keystore)
+# ============================================================================
+# Direct exfiltration of wallet files over HTTP.
+# ============================================================================
+
+# --- .wallet File Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Wallet File Upload (.wallet)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:".wallet"; http.header; content:"multipart"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Low; sid:9202360; rev:1;)
+
+# --- wallet.dat File Upload ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Bitcoin wallet.dat File Upload"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"wallet.dat"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Very_Low; sid:9202361; rev:1;)
+
+# --- Keystore File (UTC--) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Ethereum Keystore File Upload (UTC--)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"UTC--"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Very_Low; sid:9202362; rev:1;)
+
+
+# ============================================================================
+# 07G: FAKE CRYPTO SKILL NETWORK INDICATORS
+# ============================================================================
+# ClawHavoc crypto skill categories and known malicious patterns.
+# ============================================================================
+
+# --- Suspicious Crypto Trading API from OpenClaw Context ---
+# Trading request to unknown API endpoint with non-browser user agent
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Non-Browser Crypto Trade API Call"; flow:established,to_server; http.method; content:"POST"; http.uri; pcre:"/(trade|swap|exchange|order)/i"; http.request_body; content:"amount"; http.user_agent; content:!"Mozilla"; classtype:policy-violation; priority:2; metadata:mitre_attack T1657, signature_severity Major, false_positive Medium, deployment_note Correlate with legitimate bot trading activity; sid:9202370; rev:1;)
+
+# --- AMOS C2 Known for Crypto Theft ---
+# Huntress report: 45.94.47.186, sanchang.org
+alert ip $HOME_NET any -> 45.94.47.186 any (msg:"CGTI-OC CRYPTO - AMOS C2 for Crypto Theft (45.94.47.186)"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive None; reference:url,huntress.com/blog/amos-stealer-chatgpt-grok-ai-trust; sid:9202371; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - AMOS C2 Domain for Crypto Theft (sanchang.org)"; dns.query; content:"sanchang.org"; nocase; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive None; sid:9202372; rev:1;)
+
+# --- AMOS Original C2 Domain ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - AMOS Original C2 Domain (amos-malware.ru)"; dns.query; content:"amos-malware"; nocase; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1041, signature_severity Critical, false_positive None; sid:9202373; rev:1;)
+
+
+# ============================================================================
+# 07H: DEFI / SMART CONTRACT ABUSE INDICATORS
+# ============================================================================
+# Malicious skills can execute DeFi approval scams.
+# ============================================================================
+
+# --- Token Approval to Unknown Contract (Unlimited Allowance) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CRYPTO - Potential Unlimited Token Approval via API"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"approve"; content:"ffffffffffffffffffffffffffffffff"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1657, signature_severity Critical, false_positive Low, deployment_note Unlimited approval (max uint256) is a common DeFi drain technique; sid:9202380; rev:1;)
+
+# --- Drainer Script / Phishing DApp Access ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC CRYPTO - Known Crypto Drainer Service DNS (drainer-as-a-service)"; dns.query; pcre:"/(inferno-?drainer|pink-?drainer|angel-?drainer|monkey-?drainer|pussy-?drainer|ice-?phishing)/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1657, signature_severity Critical, false_positive Very_Low; sid:9202381; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 07: Cryptostealer Activity Detection
+# ============================================================================

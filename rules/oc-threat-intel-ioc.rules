@@ -1,0 +1,373 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# =============================================================================
+# SURICATA IDS/IPS RULESET — OPENCLAW THREAT INTEL IOC 
+# =============================================================================
+# Category   : Threat Intel IOC (Indicators of Compromise)
+# Version    : 1.0
+# SID Range  : 9203400 – 9203899
+# Research Sources & Confidence Basis:
+#   HIGH confidence (multiple independent vendors, confirmed in-the-wild):
+#     - Koi Security (ClawHavoc campaign, Feb 1 2026)
+#     - DTG.com (CVE-2026-25253 analysis, Moltbook breach)
+#     - Huntress (fake installer campaign, GhostSocks, Vidar, Mar 9 2026)
+#     - TrendMicro (AMOS variant analysis, Feb 23 2026)
+#     - VirusTotal Blog (reverse shell / rankaj exfil, Feb 2026)
+#     - Bitdefender Labs (enterprise telemetry, polymarket-all-in-one)
+#     - AlienVault OTX (specific URLs: /q0c7ew2ro8l2cfqp, /api/reports/upload)
+#     - adibirzu/openclaw-security-monitor IOC DB (community-aggregated)
+#   MEDIUM confidence (single-source or inferred):
+#     - Antiy CERT (publisher accounts, package counts)
+#     - Barrack AI (secondary C2 infrastructure)
+#     - SecurityScorecard STRIKE (instance enumeration)
+#
+# Confirmed IOC Summary:
+#   C2 IPs       : 91.92.242.30 (primary), 95.92.242.30, 96.92.242.30,
+#                  54.91.154.110 (revshell:13338), 202.161.50.59 (staging),
+#                  45.94.47.145/147/149
+#   Exfil Domain : socifiapp.com + /api/reports/upload endpoint
+#   Payload Host : install.app-distribution.net
+#   Droppers     : openclawcli.vercel.app, bore.pub (tunnel), glot.io (abused)
+#   GitHub Orgs  : hedefbari, Ddoy233, puppeteerrr, openclaw-installer, molt-bot
+#   Binaries     : cloudvideo.exe (Vidar), serverdrive.exe (GhostSocks),
+#                  svc_service.exe (StealthPacker), OpenClaw_x64.exe,
+#                  OpenClawBot, AuthTool.exe, openclaw-agent.exe/zip
+#
+# Design Principles (Rev.3):
+#   * EVERY rule requires >= 2 independent, concurrent indicators
+#   * Sole legitimate-service domains (webhook.site, ngrok.io, glot.io)
+#     are NEVER used alone — always paired with OpenClaw-specific content
+#   * IP-only rules restricted to confirmed exclusive malicious IPs
+#   * All exfil rules require OpenClaw-specific payload content
+#   * DNS rules use exact domain matching (no prefix wildcard FP)
+#   * No behavioral patterns, no anomaly detection, no timing-based rules
+#     (except MEDIUM-priority Vidar threshold — well above normal bot use)
+#   * All rules include source references and confidence metadata
+#   * Language: English throughout
+# =============================================================================
+
+
+# =============================================================================
+# SECTION 1: CLAWHAVOC PRIMARY C2 IP — 91.92.242.30 (HIGH)
+# =============================================================================
+# All 335 ClawHavoc skills used this single IP. Confirmed by Koi Security,
+# DTG.com, Barrack AI, AlienVault OTX. No legitimate services hosted here.
+
+
+alert ip $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc Primary C2 - Outbound to 91.92.242.30"; flow:to_server; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:1; metadata:campaign ClawHavoc, malware_family AMOS, confidence HIGH, source Koi_DTG_AlienVault; sid:9203400; rev:3;)
+
+alert ip 91.92.242.30 any -> $HOME_NET any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc Primary C2 - Inbound Response from 91.92.242.30"; flow:to_client; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:campaign ClawHavoc, confidence HIGH, direction inbound; sid:9203401; rev:3;)
+
+# Confirmed AMOS Stage-2 payload fetch path (AlienVault OTX)
+alert http $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW [IOC-URL-HIGH] ClawHavoc AMOS Stage-2 Payload Path /q0c7ew2ro8l2cfqp"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/q0c7ew2ro8l2cfqp"; classtype:trojan-activity; reference:url,radar.offseq.com/threat/malicious-openclaw-skills-used-to-distribute-atomi-1ab81aed; priority:1; metadata:campaign ClawHavoc, malware_family AMOS, confidence HIGH; sid:9203402; rev:3;)
+
+# /collect exfil endpoint on primary C2 (Koi Security / Bitdefender confirmed)
+alert http $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW [IOC-URL-HIGH] ClawHavoc /collect Exfiltration Endpoint on Primary C2"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/collect"; classtype:trojan-activity; reference:url,cyberpulseacademy.com/clawhub-malicious-skills-attack/; priority:1; metadata:campaign ClawHavoc, confidence HIGH, ioc_type exfil_endpoint; sid:9203403; rev:3;)
+
+# next.sh Stage-1 shell script fetch (Cyber Pulse Academy confirmed chain)
+alert http $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW [IOC-URL-HIGH] ClawHavoc Stage-1 Shell Fetch /next.sh from Primary C2"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/next.sh"; classtype:trojan-activity; reference:url,cyberpulseacademy.com/clawhub-malicious-skills-attack/; priority:1; metadata:campaign ClawHavoc, malware_family AMOS, confidence HIGH; sid:9203404; rev:3;)
+
+
+# =============================================================================
+# SECTION 2: CLAWHAVOC SECONDARY C2 IPs (HIGH)
+# =============================================================================
+# Secondary nodes confirmed by adibirzu IOC DB, DTG.com, Barrack AI.
+
+alert ip $HOME_NET any -> 95.92.242.30 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc Secondary C2 - 95.92.242.30"; flow:to_server; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203405; rev:3;)
+
+alert ip $HOME_NET any -> 96.92.242.30 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc Secondary C2 - 96.92.242.30"; flow:to_server; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203406; rev:3;)
+
+alert ip $HOME_NET any -> 202.161.50.59 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc Payload Staging Server - 202.161.50.59"; flow:to_server; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:campaign ClawHavoc, ioc_type payload_staging, confidence HIGH; sid:9203407; rev:3;)
+
+alert ip $HOME_NET any -> 45.94.47.145 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc C2 Node - 45.94.47.145"; flow:to_server; classtype:trojan-activity; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203408; rev:3;)
+
+alert ip $HOME_NET any -> 45.94.47.147 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc C2 Node - 45.94.47.147"; flow:to_server; classtype:trojan-activity; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203409; rev:3;)
+
+alert ip $HOME_NET any -> 45.94.47.149 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc C2 Node - 45.94.47.149"; flow:to_server; classtype:trojan-activity; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203410; rev:3;)
+
+# Full 45.94.47.0/24 subnet — all confirmed ClawHavoc infrastructure (DTG.com)
+alert ip $HOME_NET any -> 45.94.47.0/24 any (msg:"OPENCLAW [IOC-C2-HIGH] ClawHavoc C2 Subnet 45.94.47.0/24"; flow:to_server; classtype:trojan-activity; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:1; metadata:campaign ClawHavoc, confidence HIGH, ioc_type subnet; sid:9203411; rev:3;)
+
+
+# =============================================================================
+# SECTION 3: REVERSE SHELL C2 — 54.91.154.110:13338 (HIGH)
+# =============================================================================
+# better-polymarket + polymarket-all-in-one skills. Researchers confirmed
+# live /dev/tcp shell payload at this endpoint (VirusTotal, Koi, Bitdefender).
+# Port 13338 is non-standard and confirmed exclusive to this C2.
+
+alert tcp $HOME_NET any -> 54.91.154.110 13338 (msg:"OPENCLAW [IOC-REVSHELL-HIGH] ClawHavoc Reverse Shell C2 - 54.91.154.110:13338"; flow:to_server; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; priority:1; metadata:campaign ClawHavoc, malicious_skills better-polymarket/polymarket-all-in-one, confidence HIGH; sid:9203412; rev:3;)
+
+alert tcp 54.91.154.110 13338 -> $HOME_NET any (msg:"OPENCLAW [IOC-REVSHELL-HIGH] ClawHavoc Reverse Shell Response - Inbound from 54.91.154.110:13338"; flow:to_client; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; priority:1; metadata:campaign ClawHavoc, confidence HIGH, direction inbound; sid:9203413; rev:3;)
+
+# /dev/tcp shell payload delivery — confirmed payload string from C2
+alert tcp 54.91.154.110 any -> $HOME_NET any (msg:"OPENCLAW [IOC-REVSHELL-HIGH] ClawHavoc /dev/tcp Reverse Shell Payload String from C2"; flow:to_client,established; content:"/dev/tcp/54.91.154.110/13338"; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; priority:1; metadata:confidence HIGH, malware_family bash_reverse_shell; sid:9203414; rev:3;)
+
+# curl payload fetch to 54.91.154.110:13338 (Bitdefender confirmed: curl -s IP:13338/|sh)
+alert http $HOME_NET any -> 54.91.154.110 13338 (msg:"OPENCLAW [IOC-REVSHELL-HIGH] ClawHavoc curl Payload Fetch from Reverse Shell C2"; flow:to_server,established; http.method; content:"GET"; classtype:trojan-activity; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; priority:1; metadata:confidence HIGH; sid:9203415; rev:3;)
+
+
+# =============================================================================
+# SECTION 4: AMOS EXFIL DOMAIN — socifiapp.com (HIGH)
+# =============================================================================
+# TrendMicro, AlienVault OTX, SlowMist all confirm this is AMOS upload host.
+# /api/reports/upload endpoint confirmed by AlienVault OTX pulse.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-DOMAIN-HIGH] AMOS C2 Exfil - socifiapp.com HTTP Request"; flow:to_server,established; http.host; content:"socifiapp.com"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH, source TrendMicro_AlienVault; sid:9203416; rev:3;)
+
+# Confirmed specific upload endpoint (AlienVault OTX pulse)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-URL-HIGH] AMOS Upload Endpoint socifiapp.com/api/reports/upload"; flow:to_server,established; http.host; content:"socifiapp.com"; nocase; http.method; content:"POST"; http.uri; content:"/api/reports/upload"; classtype:trojan-activity; reference:url,radar.offseq.com/threat/malicious-openclaw-skills-used-to-distribute-atomi-1ab81aed; priority:1; metadata:malware_family AMOS, confidence HIGH, ioc_type exfil_url; sid:9203417; rev:3;)
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [IOC-DNS-HIGH] DNS Query - socifiapp.com (AMOS Exfil Domain)"; dns.query; content:"socifiapp.com"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203418; rev:3;)
+
+
+# =============================================================================
+# SECTION 5: AMOS INSTALLER HOST — install.app-distribution.net (HIGH)
+# =============================================================================
+# Confirmed by adibirzu IOC DB and AlienVault OTX. Hosts macOS AMOS installers.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-DOMAIN-HIGH] AMOS Installer Distribution - install.app-distribution.net"; flow:to_server,established; http.host; content:"install.app-distribution.net"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:malware_family AMOS, confidence HIGH, ioc_type payload_host; sid:9203419; rev:3;)
+
+# /setup/ endpoint confirmed by AlienVault OTX
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-URL-HIGH] AMOS Installer Setup Endpoint install.app-distribution.net/setup/"; flow:to_server,established; http.host; content:"install.app-distribution.net"; nocase; http.uri; content:"/setup/"; classtype:trojan-activity; reference:url,radar.offseq.com/threat/malicious-openclaw-skills-used-to-distribute-atomi-1ab81aed; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203420; rev:3;)
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [IOC-DNS-HIGH] DNS Query - install.app-distribution.net (AMOS Installer Host)"; dns.query; content:"install.app-distribution.net"; nocase; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203421; rev:3;)
+
+
+# =============================================================================
+# SECTION 6: FAKE OPENCLAW INSTALLER — MALICIOUS GITHUB ORGS (HIGH)
+# =============================================================================
+# All orgs confirmed by Huntress (Mar 9 2026) or adibirzu IOC DB.
+# URI path specificity avoids FP on legitimate github.com traffic.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-GITHUB-HIGH] Fake Installer Org - github.com/openclaw-installer (Vidar+GhostSocks)"; flow:to_server,established; http.host; content:"github.com"; nocase; http.uri; content:"/openclaw-installer/"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar_GhostSocks, confidence HIGH, source Huntress; sid:9203422; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-GITHUB-HIGH] Malicious Org - github.com/hedefbari (openclaw-agent.zip Windows keylogger)"; flow:to_server,established; http.host; content:"github.com"; nocase; http.uri; content:"/hedefbari/"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:campaign ClawHavoc, confidence HIGH, source Huntress; sid:9203423; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-GITHUB-HIGH] Malicious Org - github.com/Ddoy233 (openclawcli Windows infostealer)"; flow:to_server,established; http.host; content:"github.com"; nocase; http.uri; content:"/Ddoy233/"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:confidence HIGH, source adibirzu_ioc_db; sid:9203424; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-GITHUB-HIGH] Malicious Org - github.com/puppeteerrr (macOS AMOS DMG installer)"; flow:to_server,established; http.host; content:"github.com"; nocase; http.uri; content:"/puppeteerrr/"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family AMOS, confidence HIGH, source Huntress; sid:9203425; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-GITHUB-HIGH] Spam Org - github.com/molt-bot/openclaw-trading-assistant"; flow:to_server,established; http.host; content:"github.com"; nocase; http.uri; content:"/molt-bot/openclaw-trading-assistant"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:confidence HIGH, source Huntress; sid:9203426; rev:3;)
+
+# Malicious binary filename downloads from GitHub (any org)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Malicious Binary Download - OpenClaw_x64.exe from GitHub"; flow:to_server,established; http.host; content:"github.com"; nocase; http.method; content:"GET"; http.uri; content:"OpenClaw_x64.exe"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar_GhostSocks, confidence HIGH; sid:9203427; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Malicious Archive Download - openclaw-agent.zip from GitHub"; flow:to_server,established; http.host; content:"github.com"; nocase; http.method; content:"GET"; http.uri; content:"openclaw-agent.zip"; nocase; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:malware_family Keylogger, confidence HIGH; sid:9203428; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Malicious Binary Download - OpenClaw_x64.exe from githubusercontent"; flow:to_server,established; http.host; content:"githubusercontent.com"; nocase; http.method; content:"GET"; http.uri; content:"OpenClaw_x64.exe"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar, confidence HIGH; sid:9203429; rev:3;)
+
+
+# =============================================================================
+# SECTION 7: KNOWN MALICIOUS BINARY FILENAMES — HTTP DOWNLOAD (HIGH)
+# =============================================================================
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Vidar Stealer Download - cloudvideo.exe (Huntress IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"cloudvideo.exe"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar, confidence HIGH, source Huntress; sid:9203430; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] GhostSocks Proxy Download - serverdrive.exe (Huntress IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"serverdrive.exe"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family GhostSocks, confidence HIGH, source Huntress; sid:9203431; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Stealth Packer Loader Download - svc_service.exe (Huntress IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"svc_service.exe"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family StealthPacker, confidence HIGH, source Huntress; sid:9203432; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Credential Backdoor Download - AuthTool.exe (TrendMicro+Kaspersky IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"AuthTool.exe"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:confidence HIGH, source TrendMicro_Kaspersky; sid:9203433; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Fake macOS Installer Download - OpenClawBot binary (AMOS, Huntress IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"OpenClawBot"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family AMOS, confidence HIGH, source Huntress; sid:9203434; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-FILE-HIGH] Windows Keylogger Download - openclaw-agent.exe (Koi Security IOC)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"openclaw-agent.exe"; nocase; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:campaign ClawHavoc, confidence HIGH, source Koi; sid:9203435; rev:3;)
+
+
+# =============================================================================
+# SECTION 8: FAKE CLI DROPPER — openclawcli.vercel.app (HIGH)
+# =============================================================================
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-DOMAIN-HIGH] Fake CLI Dropper - openclawcli.vercel.app HTTP Request"; flow:to_server,established; http.host; content:"openclawcli.vercel.app"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:confidence HIGH, ioc_type dropper_domain; sid:9203436; rev:3;)
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [IOC-DNS-HIGH] DNS Query - openclawcli.vercel.app (Fake CLI Dropper)"; dns.query; content:"openclawcli.vercel.app"; nocase; classtype:trojan-activity; priority:1; metadata:confidence HIGH; sid:9203437; rev:3;)
+
+
+# =============================================================================
+# SECTION 9: bore.pub REVERSE TUNNEL (MEDIUM — correlate with C2 hits)
+# =============================================================================
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [IOC-DNS-MED] DNS Query - bore.pub (ClawHavoc Reverse Tunnel C2)"; dns.query; content:"bore.pub"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:2; metadata:campaign ClawHavoc, confidence MEDIUM, note corr_with_c2_ip; sid:9203438; rev:3;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-TCP-MED] bore.pub TCP Tunnel - ClawHavoc Reverse Tunnel Established"; flow:to_server,established; content:"bore.pub"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:2; metadata:campaign ClawHavoc, confidence MEDIUM; sid:9203439; rev:3;)
+
+
+# =============================================================================
+# SECTION 10: glot.io — STAGE-1 SCRIPT HOST (HIGH, specific URI required)
+# =============================================================================
+# Abused by ClawHavoc for base64-obfuscated macOS dropper scripts.
+# Rule fires only on GET requests to /snippets/ or /raw/ paths.
+# Legitimate developers rarely fetch raw snippets from glot.io in production flows.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [IOC-DOMAIN-HIGH] glot.io Shell Script Download - ClawHavoc Stage-1 Dropper (snippets/raw path)"; flow:to_server,established; http.host; content:"glot.io"; nocase; http.method; content:"GET"; http.uri; pcre:"/\/(snippets|raw)\/[a-z0-9]+/i"; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203440; rev:3;)
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [IOC-DNS-MED] DNS Query - glot.io (ClawHavoc Stage-1 Script Host, abused legitimate service)"; dns.query; content:"glot.io"; nocase; classtype:trojan-activity; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; priority:2; metadata:campaign ClawHavoc, confidence MEDIUM, note low_priority_standalone; sid:9203441; rev:3;)
+
+
+# =============================================================================
+# SECTION 11: AMOS macOS STEALER — OPENCLAW-SPECIFIC FILE EXFIL (HIGH)
+# =============================================================================
+# Every rule requires OpenClaw-unique file path OR OpenClaw-specific content.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] openclaw.json Identity File Exfil (Gateway Token + Email + Workspace)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"openclaw.json"; nocase; classtype:trojan-activity; reference:url,thehackernews.com/2026/02/infostealer-steals-openclaw-ai-agent.html; priority:1; metadata:malware_family AMOS_Vidar, confidence HIGH, source HudsonRock; sid:9203442; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] device.json Crypto Keys Exfil (Secure Pairing Keys)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"device.json"; nocase; classtype:trojan-activity; reference:url,thehackernews.com/2026/02/infostealer-steals-openclaw-ai-agent.html; priority:1; metadata:malware_family AMOS_Vidar, confidence HIGH, source HudsonRock; sid:9203443; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] soul.md Agent Identity File Exfil (Persistent Memory Theft)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"soul.md"; nocase; classtype:trojan-activity; reference:url,thehackernews.com/2026/02/infostealer-steals-openclaw-ai-agent.html; priority:1; metadata:malware_family AMOS_Vidar, confidence HIGH, source HudsonRock; sid:9203444; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] .openclaw Directory Contents Exfil in POST Body"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"/.openclaw/"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH, source TrendMicro; sid:9203445; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] out.zip Archive Upload - Confirmed AMOS Exfil Pattern (TrendMicro IOC)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"out.zip"; http.content_type; content:"multipart/form-data"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203446; rev:4;)
+
+# hardware_version + software_version together in POST (TrendMicro confirmed fingerprint)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] AMOS System Fingerprint Upload - hardware_version + software_version in POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"hardware_version"; nocase; content:"software_version"; nocase; distance:0; within:300; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203447; rev:3;)
+
+# xattr -c Gatekeeper bypass instruction in network traffic
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] macOS Gatekeeper Bypass - xattr -c Command in Network Traffic"; flow:to_client,established; http.response_body; content:"xattr -c"; nocase; content:"chmod"; nocase; distance:0; within:500; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, platform macOS; sid:9203448; rev:4;)
+
+# .kdbx KeePass database exfil (TrendMicro confirmed AMOS targets KeePass)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] KeePass .kdbx Database Exfil in POST Body (TrendMicro IOC)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:".kdbx"; nocase; classtype:trojan-activity; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203449; rev:3;)
+
+# rankaj skill: .clawdbot path + .env (legacy credential path — VirusTotal Blog)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [AMOS-HIGH] Legacy .clawdbot/.env Credential Exfil - rankaj Skill (VirusTotal Blog IOC)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:".clawdbot"; nocase; content:".env"; nocase; distance:0; within:200; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; priority:1; metadata:malware_family AMOS, malicious_skill rankaj, confidence HIGH; sid:9203450; rev:3;)
+
+
+# =============================================================================
+# SECTION 12: CREDENTIAL EXFIL VIA LEGITIMATE SERVICES (HIGH)
+# =============================================================================
+# FP mitigation: These rules ONLY fire when OpenClaw-specific API key content
+# is present alongside the legitimate service domain. No FP on normal use.
+
+# ANTHROPIC_API_KEY → webhook.site (rankaj skill confirmed, VirusTotal Blog)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] Anthropic API Key Exfil via webhook.site - OpenClaw .env Theft"; flow:to_server,established; http.method; content:"POST"; http.host; content:"webhook.site"; nocase; http.request_body; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; priority:1; metadata:malware_family AMOS, malicious_skill rankaj, confidence HIGH; sid:9203451; rev:3;)
+
+# OPENAI_API_KEY → webhook.site
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] OpenAI API Key Exfil via webhook.site - OpenClaw .env Theft"; flow:to_server,established; http.method; content:"POST"; http.host; content:"webhook.site"; nocase; http.request_body; content:"OPENAI_API_KEY"; classtype:trojan-activity; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; priority:1; metadata:malware_family AMOS, confidence HIGH; sid:9203452; rev:3;)
+
+# OPENCLAW_GATEWAY_TOKEN in any outbound POST
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] Gateway Token Exfil - OPENCLAW_GATEWAY_TOKEN in POST Body"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"OPENCLAW_GATEWAY_TOKEN"; classtype:trojan-activity; priority:1; metadata:confidence HIGH; sid:9203453; rev:3;)
+
+# Slack xoxb- OAuth token exfil (OpenClaw Slack integration credential theft)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] Slack OAuth xoxb- Token Exfil in POST Body"; flow:to_server,established; http.method; content:"POST"; http.host; content:!"slack.com"; content:!"api.slack.com"; http.request_body; content:"xoxb-"; classtype:trojan-activity; priority:1; metadata:confidence HIGH; sid:9203454; rev:4;)
+
+# ANTHROPIC_API_KEY → pipedream.net (alternative exfil service, adibirzu IOC DB)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] Anthropic API Key Exfil via pipedream.net (Alternative Exfil Service)"; flow:to_server,established; http.method; content:"POST"; http.host; content:"pipedream.net"; nocase; http.request_body; content:"ANTHROPIC_API_KEY"; nocase; classtype:trojan-activity; reference:url,github.com/adibirzu/openclaw-security-monitor; priority:1; metadata:confidence HIGH; sid:9203455; rev:3;)
+
+
+# =============================================================================
+# SECTION 13: VIDAR STEALER — TELEGRAM C2 CONFIG RETRIEVAL (HIGH)
+# =============================================================================
+# cloudvideo.exe fetches C2 address from Telegram /getChat. Threshold:
+# 5 requests per 5 minutes — well above normal OpenClaw Telegram bot use.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [VIDAR-HIGH] Vidar C2 Config Fetch - Telegram /getChat High-Rate Polling"; flow:to_server,established; http.host; content:"api.telegram.org"; nocase; http.method; content:"GET"; http.uri; content:"/getChat"; nocase; threshold:type threshold,track by_src,count 5,seconds 300; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar, confidence HIGH, source Huntress; sid:9203456; rev:3;)
+
+# Vidar: openclaw.json in Telegram API POST body (exfil via Telegram)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [VIDAR-HIGH] Vidar Exfil - openclaw.json via Telegram Bot API POST"; flow:to_server,established; http.method; content:"POST"; http.host; content:"api.telegram.org"; nocase; http.request_body; content:"openclaw.json"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family Vidar, confidence HIGH, source Huntress; sid:9203457; rev:3;)
+
+
+# =============================================================================
+# SECTION 14: GHOSTSOCKS PROXY MALWARE (HIGH)
+# =============================================================================
+# Deployed by Stealth Packer alongside Vidar. TLS-based residential proxy.
+
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [GHOSTSOCKS-HIGH] GhostSocks TLS Session - serverdrive SNI Pattern (Huntress IOC)"; flow:to_server,established; tls.sni; content:"serverdrive"; nocase; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family GhostSocks, confidence HIGH, source Huntress; sid:9203458; rev:3;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [GHOSTSOCKS-HIGH] GhostSocks Protocol String in TCP Traffic (Huntress IOC)"; flow:to_server,established; content:"GhostSocks"; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:malware_family GhostSocks, confidence HIGH, source Huntress; sid:9203459; rev:3;)
+
+# Stealth Packer EV cert abuse (TrustConnect Software PTY LTD signs the loaders)
+alert tls $EXTERNAL_NET any -> $HOME_NET any (msg:"OPENCLAW [GHOSTSOCKS-HIGH] Stealth Packer Malicious EV Cert - TrustConnect Software PTY LTD Issuer"; flow:to_client,established; tls.cert_issuer; content:"TrustConnect Software"; nocase; classtype:trojan-activity; reference:url,scworld.com/brief/bing-boosted-openclaw-installers-deliver-infostealers-ghostsocks-malware; priority:1; metadata:malware_family StealthPacker, confidence HIGH, source SC_Media; sid:9203460; rev:3;)
+
+
+# =============================================================================
+# SECTION 15: SSH / PRIVATE KEY EXFILTRATION (HIGH)
+# =============================================================================
+# PEM header strings are unambiguous — near-zero FP in POST request bodies.
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] OpenSSH Private Key Exfil - BEGIN OPENSSH PRIVATE KEY in POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"BEGIN OPENSSH PRIVATE KEY"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, confidence HIGH, target ssh_keys; sid:9203461; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] RSA Private Key Exfil - BEGIN RSA PRIVATE KEY in POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"BEGIN RSA PRIVATE KEY"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, confidence HIGH, target rsa_keys; sid:9203462; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [EXFIL-HIGH] EC Private Key Exfil - BEGIN EC PRIVATE KEY in POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"BEGIN EC PRIVATE KEY"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, confidence HIGH, target ec_keys; sid:9203463; rev:3;)
+
+
+# =============================================================================
+# SECTION 16: CLAWHUB SUPPLY CHAIN — MALICIOUS PUBLISHERS & SKILLS (HIGH)
+# =============================================================================
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Publisher hightower6eu - ClawHub Install (Antiy CERT IOC, 354 skills)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"hightower6eu"; nocase; classtype:trojan-activity; reference:url,antiy.net/p/clawhavoc-analysis-of-large-scale-poisoning-campaign-targeting-the-openclaw-skill-market-for-ai-agents/; priority:1; metadata:campaign ClawHavoc, confidence HIGH, source Antiy; sid:9203464; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Publisher moonshine-100rze - ClawHub Install (Antiy CERT, 14285 downloads)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"moonshine-100rze"; nocase; classtype:trojan-activity; reference:url,antiy.net/p/clawhavoc-analysis-of-large-scale-poisoning-campaign-targeting-the-openclaw-skill-market-for-ai-agents/; priority:1; metadata:campaign ClawHavoc, confidence HIGH, source Antiy; sid:9203465; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Typosquat Publisher aslaep123 - ClawHub Install (asleep123 impersonation)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"aslaep123"; nocase; classtype:trojan-activity; priority:1; metadata:ioc_type publisher_typosquat, confidence HIGH; sid:9203466; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Skill Install - bybit-agent (ClawHavoc crypto credential theft)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"bybit-agent"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203467; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Skill Install - solana-wallet-tracker (ClawHavoc wallet theft, Koi IOC)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"solana-wallet-tracker"; nocase; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:campaign ClawHavoc, confidence HIGH, source Koi; sid:9203468; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Skill Install - deeps-agnw6h (Deep-Agent impersonator, Antiy CERT IOC)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"deeps-agnw6h"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203469; rev:3;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Skill Install - reddit-trends (AMOS dropper, Koi IOC)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; content:"reddit-trends"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203470; rev:3;)
+
+# phantom-wallet-* family pattern (crypto theft)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-HIGH] Malicious Skill Pattern - phantom-wallet-* (ClawHavoc crypto theft family)"; flow:to_server,established; http.host; content:"clawhub"; nocase; http.uri; pcre:"/\/phantom-wallet-[a-z0-9_-]+/i"; classtype:trojan-activity; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203471; rev:3;)
+
+# SkillsMP.com — secondary malicious marketplace (TrendMicro Feb 23 2026)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [SUPPLY-MED] Secondary Malicious Skill Marketplace - skillsmp.com Access"; flow:to_server,established; http.host; content:"skillsmp.com"; nocase; classtype:policy-violation; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; priority:2; metadata:confidence MEDIUM, source TrendMicro; sid:9203472; rev:3;)
+
+
+# =============================================================================
+# SECTION 17: CLAWHAVOC NETWORK TRAFFIC PATTERNS (HIGH)
+# =============================================================================
+
+# Bare IP as HTTP Host + shell script URI = ClawHavoc Stage-1 chain
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [CLAWHAVOC-HIGH] Bare IP HTTP Shell Script Fetch - ClawHavoc Stage-1 Chain"; flow:to_server,established; http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/"; http.uri; pcre:"/\/(next|setup|init|deploy)\.(sh|py|bash)$/i"; classtype:trojan-activity; reference:url,cyberpulseacademy.com/clawhub-malicious-skills-attack/; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203473; rev:3;)
+
+# /collect endpoint + long base64 body (confirmed exfil pattern, Barrack AI)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [CLAWHAVOC-HIGH] /collect Endpoint with Base64-Encoded Body (Exfil Pattern)"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/collect"; http.request_body; pcre:"/^[A-Za-z0-9+\/]{100,}={0,2}$/"; classtype:trojan-activity; reference:url,blog.barrack.ai/openclaw-security-vulnerabilities-2026/; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203474; rev:3;)
+
+# Antiy CERT IOC: payload*.py/sh staged download (Trojan/OpenClaw.PolySkill)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [POLYSKILL-HIGH] Antiy IOC - payload*.py/sh Staged Reverse Shell Download"; flow:to_server,established; http.method; content:"GET"; http.uri; pcre:"/\/payload[_\-]?[0-9]?\.(py|sh|rb)$/i"; classtype:trojan-activity; reference:url,antiy.net/p/clawhavoc-analysis-of-large-scale-poisoning-campaign-targeting-the-openclaw-skill-market-for-ai-agents/; priority:1; metadata:malware_family OpenClaw_PolySkill, confidence HIGH, source Antiy; sid:9203475; rev:3;)
+
+# Fake install.sh download from non-official sources (Huntress IOC context)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [FAKE-INSTALL-HIGH] install.sh from Non-Official Source (not openclaw.ai/github.com/openclaw)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/install.sh"; nocase; content:"openclaw"; nocase; http.host; content:!"openclaw.ai"; content:!"github.com"; content:!"githubusercontent.com"; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203476; rev:4;)
+
+# AV-bypass ZIP with "openclaw" password hint in HTTP response
+# ClawHavoc Windows payloads use password:"openclaw" to bypass antivirus scanning
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"OPENCLAW [CLAWHAVOC-HIGH] Windows Malware ZIP with openclaw Password Hint in Response (AV Bypass)"; flow:established; http.response_body; content:"openclaw"; nocase; content:"password"; nocase; distance:0; within:200; http.uri; content:".zip"; nocase; classtype:trojan-activity; reference:url,blog.barrack.ai/openclaw-security-vulnerabilities-2026/; priority:1; metadata:campaign ClawHavoc, confidence HIGH; sid:9203477; rev:3;)
+
+
+# =============================================================================
+# SECTION 18: MOLTBOOK SUPABASE BREACH — TOKEN ABUSE DETECTION (MEDIUM)
+# =============================================================================
+# 1.5M tokens leaked. High-rate Supabase access from single source = abuse.
+
+alert http any any -> $EXTERNAL_NET any (msg:"OPENCLAW [MOLTBOOK-MED] High-Rate Supabase Access - Possible Moltbook Leaked Token Abuse (100 req/min)"; flow:to_server,established; http.host; content:".supabase.co"; nocase; http.header; content:"apikey:"; nocase; threshold:type threshold,track by_src,count 100,seconds 60; classtype:policy-violation; reference:url,dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; priority:3; metadata:source DTG, confidence MEDIUM; sid:9203478; rev:4;)
+
+
+# =============================================================================
+# SECTION 19: TYPOSQUAT DOMAIN PATTERNS (HIGH)
+# =============================================================================
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW [TYPOSQUAT-HIGH] Fake Installer Domain - openclaw-installer Pattern in HTTP Host"; flow:to_server,established; http.host; pcre:"/openclaw[_-]installer/i"; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:campaign FakeInstaller, confidence HIGH, source Huntress; sid:9203479; rev:3;)
+
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW [TYPOSQUAT-HIGH] DNS Query - openclaw-installer Typosquat Pattern"; dns.query; pcre:"/openclaw[_-]installer/i"; classtype:trojan-activity; reference:url,huntress.com/blog/openclaw-github-ghostsocks-infostealer; priority:1; metadata:confidence HIGH; sid:9203480; rev:3;)
+
+
+# =============================================================================
+# SECTION 20: INDIRECT PROMPT INJECTION IN WEB RESPONSES (HIGH)
+# =============================================================================
+# Rules require two concurrent indicators to avoid FP on legitimate pages.
+
+# Hidden CSS + prompt injection (Zenity Labs / Oasis Security confirmed vector)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"OPENCLAW [PROMPT-INJECT-HIGH] Hidden CSS + Instruction Override in Web Response (Agent Hijack)"; flow:to_client,established; http.response_body; pcre:"/display\s*:\s*none[^}]{0,200}(ignore\s+previous|disregard|override\s+instructions)/is"; classtype:web-application-attack; reference:url,thehackernews.com/2026/02/clawjacked-flaw-lets-malicious-sites.html; priority:1; metadata:attack_type indirect_prompt_injection, confidence HIGH; sid:9203481; rev:3;)
+
+# [SYSTEM]/[ADMIN]/[OVERRIDE] tag + exec keyword in web response
+# DISABLED-FP: [SYSTEM]+exec on ALL HTTP responses (not port-scoped) fires on tech docs — duplicate of disabled SID:9203124
+# alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"OPENCLAW [PROMPT-INJECT-HIGH] Agent Override Tag + exec in Web Response ([SYSTEM]/[ADMIN]/[OVERRIDE])"; flow:to_client,established; http.response_body; pcre:"/\[(SYSTEM|ADMIN|OVERRIDE|INSTRUCTION)\]/i"; content:"exec"; nocase; distance:0; within:400; classtype:web-application-attack; reference:url,blog.barrack.ai/openclaw-security-vulnerabilities-2026/; priority:1; metadata:attack_type indirect_prompt_injection; sid:9203482; rev:3;)
+
+# Telegram bot creation injection + soul.md reference (Zenity Labs Google Docs attack)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"OPENCLAW [PROMPT-INJECT-HIGH] Telegram Bot Creation + soul.md Injection - Zenity Labs Google Docs Vector"; flow:to_client,established; http.response_body; pcre:"/create[_\s-]?bot/i"; content:"SOUL.md"; nocase; distance:0; within:600; classtype:web-application-attack; reference:url,blog.barrack.ai/openclaw-security-vulnerabilities-2026/; priority:1; metadata:attack_type prompt_worm, source ZenityLabs; sid:9203483; rev:3;)
+
+

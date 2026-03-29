@@ -1,0 +1,260 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 06: Gateway & Agent Exposure Detection
+# File: oc-gateway-exposure.rules
+# SID Range: 9202000 – 9202299
+# Version: 1.0
+# Date: 2026-03-07
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects misconfiguration-related risks of the OpenClaw gateway,
+# internet-exposed instances, Moltbook/agent-to-agent platform
+# interactions, and browser/reconnaissance activities.
+#
+# Threat landscape:
+# - 135,000+ internet-exposed instances (SecurityScorecard)
+# - 42,665 instances, 93.4% with auth bypass (Maor Dayan)
+# - Default 0.0.0.0:18789 binding — listening on all interfaces
+# - Auth disabled by default
+# - mDNS broadcast: hostname, SSH status, file path disclosure
+# - Moltbook: 1.5M API tokens exposed (Supabase RLS disabled)
+# - Agent-to-agent communication: prompt injection chain propagation
+# - Shodan/Censys/Bitsight active scanning
+# - Honeypot data: scanning begins minutes after exposure
+#
+# REFERENCES
+# ----------
+# - SecurityScorecard STRIKE: "135,000+ exposed instances" (Feb 2026)
+# - Wiz: "Hacking Moltbook: 1.5M API Keys" (Feb 2026)
+# - Adversa.ai: "OpenClaw Security 101" (Feb 2026)
+# - Kaspersky: "OpenClaw Risks" (Feb 2026)
+# - OX Security: "What We Found Inside MoltBot" (Jan 2026)
+# - Giskard: "OpenClaw Security Issues" (Feb 2026)
+# - Oasis Security: "ClawJacked" (Feb 2026)
+# - Barrack AI: "OpenClaw Security Nightmare" (Feb 2026)
+# ============================================================================
+
+
+# ============================================================================
+# 06A: EXPOSED GATEWAY — EXTERNAL ACCESS DETECTION
+# ============================================================================
+# Any external connection to OpenClaw gateway port 18789 is an indicator
+# of a security violation. The gateway should only run on localhost.
+# ============================================================================
+
+# --- Any External TCP to Gateway Port 18789 ---
+
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - External TCP Connection to OpenClaw Gateway Port 18789"; flow:to_server; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low, deployment_note OpenClaw gateway should NEVER be accessible externally; sid:9202000; rev:1;)
+
+# --- HTTP GET to Gateway from External ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - External HTTP Request to OpenClaw Gateway"; flow:to_server,established; http.method; content:"GET"; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202001; rev:1;)
+
+# --- Gateway Serving Content to External ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Gateway Serving Content to External Client"; flow:established,to_client; http.stat_code; content:"200"; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202002; rev:1;)
+
+# --- OpenClaw Control UI Title in Response ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - OpenClaw Control UI Title in External Response"; flow:established,to_client; http.response_body; content:"OpenClaw"; content:"Control"; distance:0; within:20; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202003; rev:1;)
+
+# --- Legacy Moltbot/Clawdbot UI Detection ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Legacy Moltbot Control UI Served Externally"; flow:established,to_client; http.response_body; content:"Moltbot"; content:"Control"; distance:0; within:20; classtype:policy-violation; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202004; rev:1;)
+
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Legacy Clawdbot Control UI Served Externally"; flow:established,to_client; http.response_body; content:"Clawdbot"; content:"Control"; distance:0; within:20; classtype:policy-violation; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202005; rev:1;)
+
+# --- Gateway on Non-Default Port (80/443 Reverse Proxy) ---
+alert http $EXTERNAL_NET any -> $HOME_NET $HTTP_PORTS (msg:"CGTI-OC GWEXPOSE - OpenClaw Gateway Fingerprint on Standard Web Port"; flow:to_client,established; http.response_body; content:"openclaw"; nocase; content:"gateway"; nocase; distance:0; within:50; classtype:policy-violation; priority:2; metadata:mitre_attack T1190, signature_severity Major, false_positive Low; sid:9202006; rev:1;)
+
+
+# ============================================================================
+# 06B: UNAUTHENTICATED GATEWAY ACCESS
+# ============================================================================
+# Access with authentication disabled or via Guest Mode.
+# ============================================================================
+
+# --- WebSocket Upgrade Without Auth Header ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Unauthenticated WebSocket Upgrade Request"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:!"Authorization"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202010; rev:1;)
+
+# --- Guest Mode Access with Tool Invocation ---
+alert tcp any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - Guest Mode Tool Invocation"; flow:to_server,established; content:"Guest"; content:"tool.invoke"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1078.001, signature_severity Critical, false_positive Low; sid:9202011; rev:1;)
+
+# --- Guest Mode Python REPL Access ---
+# DISABLED-FP: Python REPL is a core OpenClaw feature
+# alert tcp any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - Guest Mode Python REPL Escalation"; flow:to_server,established; content:"Guest"; content:"python"; distance:0; within:50; content:"repl"; distance:0; within:20; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059.006, signature_severity Critical, false_positive Very_Low; sid:9202012; rev:1;)
+
+# --- API Key Visible in Response to External ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - API Key Leaked in Gateway Response (OPENAI)"; flow:established,to_client; http.response_body; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202013; rev:1;)
+
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - API Key Leaked in Gateway Response (ANTHROPIC)"; flow:established,to_client; http.response_body; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202014; rev:1;)
+
+# --- Telegram Bot Token in Gateway Response ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Telegram Bot Token Leaked in Gateway Response"; flow:established,to_client; http.response_body; content:"TELEGRAM_BOT_TOKEN"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202015; rev:1;)
+
+# --- Chat History Leaked to External ---
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Chat Session History in External Response"; flow:established,to_client; http.response_body; content:"sessions_history"; content:"messages"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Low; sid:9202016; rev:1;)
+
+
+# ============================================================================
+# 06C: MDNS INFORMATION DISCLOSURE
+# ============================================================================
+# OpenClaw gateway announces its presence on the local network via mDNS:
+# _openclaw-gw._tcp, hostname, SSH status, filesystem paths.
+# Attackers use this information for reconnaissance.
+# ============================================================================
+
+# --- OpenClaw Gateway mDNS Service Type ---
+alert udp any any -> any 5353 (msg:"CGTI-OC GWEXPOSE - OpenClaw Gateway mDNS Broadcast (_openclaw-gw._tcp)"; content:"_openclaw-gw"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9202020; rev:1;)
+
+# --- Legacy Moltbot mDNS ---
+alert udp any any -> any 5353 (msg:"CGTI-OC GWEXPOSE - Legacy Moltbot mDNS Broadcast"; content:"_moltbot"; nocase; classtype:attempted-recon; priority:2; metadata:mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9202021; rev:1;)
+
+# --- Legacy Clawdbot mDNS ---
+alert udp any any -> any 5353 (msg:"CGTI-OC GWEXPOSE - Legacy Clawdbot mDNS Broadcast"; content:"_clawdbot"; nocase; classtype:attempted-recon; priority:2; metadata:mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9202022; rev:1;)
+
+# --- mDNS with SSH Availability ---
+alert udp any any -> any 5353 (msg:"CGTI-OC GWEXPOSE - OpenClaw mDNS with SSH Info Disclosure"; content:"openclaw"; nocase; content:"ssh"; nocase; distance:0; within:100; classtype:attempted-recon; priority:1; metadata:mitre_attack T1046, signature_severity Critical, false_positive Very_Low; sid:9202023; rev:1;)
+
+
+# ============================================================================
+# 06D: INTERNET SCANNER & AUTOMATED PROBE DETECTION
+# ============================================================================
+# Shodan, Censys, Bitsight, Hunt.io, and other scanners are actively
+# scanning port 18789. Honeypot data: scanning begins minutes after
+# exposure (Terrace Networks).
+# ============================================================================
+
+# --- Shodan Scanner ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Shodan Scanner Probe on Gateway"; flow:to_server,established; content:"Shodan"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9202030; rev:1;)
+
+# --- Censys Scanner ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Censys Scanner Probe on Gateway"; flow:to_server,established; content:"CensysInspect"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9202031; rev:1;)
+
+# --- Nuclei Vulnerability Scanner ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Nuclei Exploit Scanner on Gateway"; flow:to_server,established; content:"Nuclei"; classtype:attempted-recon; priority:1; metadata:mitre_attack T1595.002, signature_severity Critical, false_positive Very_Low; sid:9202032; rev:1;)
+
+# --- Nmap Service Detection ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Nmap Service Detection on Gateway Port"; flow:to_server,established; content:"Nmap"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9202033; rev:1;)
+
+# --- ZGrab / ZMap Scanner ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - ZGrab/ZMap Scanner on Gateway Port"; flow:to_server,established; content:"zgrab"; nocase; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9202034; rev:1;)
+
+# --- Rapid SYN Scan on Port 18789 ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - Rapid SYN Port Scan on Gateway"; flow:to_server; flags:S; threshold:type both, track by_src, count 3, seconds 5; classtype:attempted-recon; priority:2; metadata:mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202035; rev:2;)
+
+# --- HTTP Probe: Root Path ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - HTTP Root Probe on Gateway (Automated Scanner)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/"; depth:1; threshold:type both, track by_src, count 3, seconds 30; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Low; sid:9202036; rev:1;)
+
+# --- /json Debug Endpoint Probe ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - /json Debug Endpoint Probe on Gateway"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/json"; classtype:attempted-recon; priority:1; metadata:mitre_attack T1595, signature_severity Critical, false_positive Very_Low; sid:9202037; rev:1;)
+
+# --- /api/ Endpoint Discovery ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - API Endpoint Discovery on Gateway"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/api/"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Low; sid:9202038; rev:1;)
+
+
+# ============================================================================
+# 06E: MOLTBOOK / AGENT-TO-AGENT PLATFORM INTERACTION
+# ============================================================================
+# Moltbook (AI agent social network): 1.5M API tokens, 35K emails exposed.
+# Agent-to-agent communication carries the risk of prompt injection chain propagation.
+# OpenClaw agent interaction with Moltbook poses a security risk.
+# Source: Wiz, 404 Media, PointGuard AI
+# ============================================================================
+
+# --- Moltbook API/Website Access ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - OpenClaw Agent Accessing Moltbook Platform"; flow:established,to_server; http.host; content:"moltbook"; nocase; classtype:policy-violation; priority:2; metadata:affected_product OpenClaw, mitre_attack T1102, signature_severity Major, false_positive Low, deployment_note Moltbook access from OpenClaw host exposes agent to prompt injection; reference:url,wiz.io/blog/exposed-moltbook-database-reveals-millions-of-api-keys; sid:9202050; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC GWEXPOSE - Moltbook DNS Lookup from OpenClaw Host"; dns.query; content:"moltbook"; nocase; classtype:policy-violation; priority:2; metadata:mitre_attack T1102, signature_severity Major, false_positive Low; sid:9202051; rev:1;)
+
+# --- Moltbook Supabase API Access ---
+# Moltbook Supabase backend — token theft target
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Moltbook Supabase API Access (Potential Token Harvest)"; flow:established,to_server; http.host; content:"supabase"; http.header; content:"apikey"; http.uri; content:"agents"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Low; sid:9202052; rev:1;)
+
+# --- MoltMatch (AI Dating Platform) Agent Interaction ---
+# Agent can automatically create a profile on MoltMatch (consent risk)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Agent Accessing MoltMatch Platform"; flow:established,to_server; http.host; content:"moltmatch"; nocase; classtype:policy-violation; priority:2; metadata:mitre_attack T1102, signature_severity Major, false_positive Low; sid:9202053; rev:1;)
+
+# --- Agent Registering on External Platform Autonomously ---
+# Patterns of OpenClaw agent autonomously registering on external platforms
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Agent Self-Registration POST (register/signup)"; flow:established,to_server; http.method; content:"POST"; http.uri; pcre:"/(register|signup|create[_-]?account)/i"; http.request_body; content:"agent"; nocase; classtype:policy-violation; priority:2; metadata:mitre_attack T1102, signature_severity Major, false_positive Medium; sid:9202054; rev:1;)
+
+# --- Agent-to-Agent Prompt Injection Propagation ---
+# One agent sending a message to another agent (prompt injection chain)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Agent POST to External Agent API (Cross-Agent Communication)"; flow:established,to_server; http.method; content:"POST"; http.uri; content:"/agent"; http.request_body; content:"message"; content:"instruction"; distance:0; within:200; classtype:policy-violation; priority:2; metadata:mitre_attack T1080, signature_severity Major, false_positive Low; sid:9202055; rev:1;)
+
+
+# ============================================================================
+# 06F: PLAINTEXT CREDENTIAL STORAGE EXPOSURE
+# ============================================================================
+# OpenClaw stores credentials in plaintext:
+# ~/.openclaw/credentials/, .env, JSON files.
+# Reading or transmitting these files over the network is detected.
+# Source: OX Security, Adversa.ai, Conscia
+# ============================================================================
+
+# --- Gateway Response Contains sk- API Key ---
+alert tcp $HOME_NET 18789 -> any any (msg:"CGTI-OC GWEXPOSE - sk- API Key Pattern in Gateway Response"; flow:established,to_client; content:"|22|sk-"; content:"|22|"; distance:20; within:80; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202060; rev:1;)
+
+# --- Gateway Response Contains WhatsApp Credentials ---
+alert tcp $HOME_NET 18789 -> any any (msg:"CGTI-OC GWEXPOSE - WhatsApp Credentials in Gateway Response"; flow:established,to_client; content:"whatsapp"; nocase; content:"token"; nocase; distance:0; within:30; content:"secret"; nocase; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Low; sid:9202061; rev:1;)
+
+# --- Gateway Leaking .env Content ---
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Environment Variables Leaked from Gateway"; flow:established,to_client; content:"DATABASE_URL"; content:"SECRET"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202062; rev:1;)
+
+
+# ============================================================================
+# 06G: LATERAL MOVEMENT VIA OPENCLAW
+# ============================================================================
+# Lateral movement of a compromised OpenClaw agent within the internal network.
+# Agent connecting to other devices, file system access, pivoting.
+# ============================================================================
+
+# --- OpenClaw Instance to OpenClaw Instance (Internal) ---
+alert tcp $HOME_NET 18789 -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - OpenClaw Gateway to Gateway Communication (Lateral)"; flow:to_server; classtype:trojan-activity; priority:1; metadata:mitre_attack T1021, signature_severity Critical, false_positive Low, deployment_note Gateway-to-gateway traffic is unusual and may indicate lateral movement; sid:9202070; rev:1;)
+
+# --- Agent Pivoting to Internal Services ---
+# DISABLED-FP: No OpenClaw-specific content — matches ALL internal DB/SSH traffic in the network
+# alert tcp $HOME_NET any -> $HOME_NET [22,3306,5432,6379,27017] (msg:"CGTI-OC GWEXPOSE - OpenClaw Host Accessing Internal Service Ports"; flow:to_server; threshold:type both, track by_src, count 5, seconds 60; classtype:policy-violation; priority:2; metadata:mitre_attack T1021, signature_severity Major, false_positive Medium, deployment_note Rapid access to multiple internal service ports from OpenClaw host is suspicious; sid:9202071; rev:1;)
+
+# --- Node.invoke on Remote Node ---
+alert tcp any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - Remote Node Command Execution via Gateway"; flow:to_server,established; content:"node.invoke"; content:"system.run"; distance:0; within:50; content:"nodeId"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1021, signature_severity Critical, false_positive Low; sid:9202072; rev:1;)
+
+
+# ============================================================================
+# 06H: CRYPTO SCAM / FAKE TOKEN INFRASTRUCTURE
+# ============================================================================
+# During the OpenClaw rebrand, crypto scammers hijacked @clawdbot handles
+# and promoted a fake $CLAWD token ($16M market cap followed by collapse).
+# Fake VS Code extensions installed ScreenConnect RAT.
+# Source: Adversa.ai
+# ============================================================================
+
+# --- Fake $CLAWD/$MOLTBOT Token Scam Sites ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC GWEXPOSE - Fake CLAWD Token Scam Domain DNS Lookup"; dns.query; pcre:"/clawd(bot)?(token|coin|swap|dex)/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1583.001, signature_severity Critical, false_positive Very_Low; sid:9202080; rev:1;)
+
+# --- Fake OpenClaw Extension Download (ScreenConnect RAT) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - Suspicious Clawdbot Extension Download"; flow:established,to_server; http.uri; content:"clawdbot"; nocase; pcre:"/\.(vsix|exe|msi|zip)$/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1204.002, signature_severity Critical, false_positive Very_Low; sid:9202081; rev:1;)
+
+# --- ScreenConnect RAT C2 (Fake Extension Payload) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GWEXPOSE - ScreenConnect Agent Download (Fake Extension Payload)"; flow:established,to_server; http.uri; content:"ScreenConnect"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1219, signature_severity Critical, false_positive Low; sid:9202082; rev:1;)
+
+
+# ============================================================================
+# 06I: OPENCLAW CONFIGURATION EXPOSURE VIA HTTP
+# ============================================================================
+# Access tokens appearing in URL query parameters.
+# Leaves traces in browser history, server logs, and reverse proxy logs.
+# Source: Giskard
+# ============================================================================
+
+# --- Auth Token in URL Query String ---
+alert http any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - Auth Token in URL Query Parameter (Exposure Risk)"; flow:to_server,established; http.uri; content:"token="; content:"sk-"; distance:0; within:10; classtype:policy-violation; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low, deployment_note Tokens in URLs leak via logs and history; sid:9202090; rev:1;)
+
+# --- Gateway URL Parameter with External Target ---
+alert http any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - gatewayUrl Parameter with External Target (CVE-2026-25253)"; flow:to_server,established; http.uri; content:"gatewayUrl="; pcre:"/gatewayUrl=wss?:\/\/(?!localhost|127\.0\.0\.1)/i"; classtype:attempted-admin; priority:1; metadata:cve CVE-2026-25253, mitre_attack T1557, signature_severity Critical, false_positive Very_Low; sid:9202091; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 06: Gateway & Agent Exposure Detection
+# ============================================================================

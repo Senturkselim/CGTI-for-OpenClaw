@@ -1,0 +1,184 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 08: MCP Server Security
+# File: oc-mcp-security.rules
+# SID Range: 9202600 – 9202899
+# Version: 1.0
+# Date: 2026-03-07
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects attacks targeting Model Context Protocol (MCP) servers and
+# threats coming through OpenClaw's MCP integration.
+#
+# MCP Threat Landscape:
+# - 8,000+ MCP servers exposed to the internet (Bitsight, Feb 2026)
+# - 36.7% of MCP servers have SSRF vulnerabilities (Microsoft MarkItDown)
+# - Auth is optional by default (OAuth 2.1 recommended but not required)
+# - Malicious MCP server → credential theft, RCE, data exfiltration
+# - Confused deputy attacks (via proxy MCP server)
+# - Tool shadowing: malicious server overrides another server's tools
+# - OpenClaw MCP integration via the mcporter skill
+#
+# MCP Endpoints: /mcp, /sse, /messages (Streamable HTTP + SSE transport)
+# MCP Protocol: JSON-RPC 2.0 — initialize, tools/list, tools/call
+#
+# REFERENCES
+# ----------
+# - Bitsight: "Exposed MCP Servers" (Dec 2025)
+# - Dark Reading: "Microsoft & Anthropic MCP Servers at Risk" (Jan 2026)
+# - Strobes: "MCP Critical Vulnerabilities"
+# - MCP Spec: modelcontextprotocol.io/specification
+# - Giskard: "OpenClaw + MCP attack patterns" (Feb 2026)
+# ============================================================================
+
+
+# ============================================================================
+# 08A: EXPOSED MCP SERVER DETECTION
+# ============================================================================
+# MCP servers exposed to the internet — /mcp, /sse endpoints.
+# ============================================================================
+
+# --- External Access to /mcp Endpoint ---
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Endpoint (/mcp)"; flow:to_server,established; http.uri; content:"/mcp"; http.method; content:"POST"; http.header; content:"application/json"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202600; rev:1;)
+
+# --- External Access to /sse Endpoint ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to SSE Endpoint (/sse)"; flow:to_server,established; http.uri; content:"/sse"; http.method; content:"GET"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202601; rev:1;)
+
+# --- External Access to /messages Endpoint ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Messages Endpoint"; flow:to_server,established; http.uri; content:"/messages"; http.method; content:"POST"; http.request_body; content:"jsonrpc"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202602; rev:1;)
+
+# --- MCP Initialize Handshake from External ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Initialize Handshake from External Source"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"jsonrpc"; content:"initialize"; distance:0; within:50; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202603; rev:1;)
+
+# --- Unauthenticated MCP Request (No Auth Header) ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Unauthenticated MCP Request (No Authorization)"; flow:to_server,established; http.uri; content:"/mcp"; http.method; content:"POST"; http.header; content:!"Authorization"; http.request_body; content:"jsonrpc"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202604; rev:1;)
+
+
+# ============================================================================
+# 08B: MCP TOOL INVOCATION ATTACKS
+# ============================================================================
+# Malicious tool calls: shell execution, file access, SSRF.
+# ============================================================================
+
+# --- MCP tools/call with Shell Execution ---
+# DISABLED-FP: exec matches legitimate MCP tools: execute_query, exec_sql, exec_command
+# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with Shell Command (tools/call + exec)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"exec"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202610; rev:1;)
+
+# --- MCP tools/call with system.run ---
+alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call system.run (RCE via MCP)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"system.run"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9202611; rev:1;)
+
+# --- MCP tools/list Enumeration from External ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tools Enumeration from External (tools/list)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/list"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202612; rev:1;)
+
+# --- MCP resources/list Enumeration ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Resources Enumeration from External"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"resources/list"; classtype:attempted-recon; priority:2; metadata:mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202613; rev:1;)
+
+# --- MCP Tool Call with File Read ---
+# DISABLED-FP: read_file is a standard MCP filesystem tool — fires on every legitimate file read
+# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with File Read Operation"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"read_file"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Low; sid:9202614; rev:1;)
+
+# --- MCP Tool Call with File Write ---
+# DISABLED-FP: write_file is a standard MCP filesystem tool — fires on every legitimate file write
+# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with File Write Operation"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"write_file"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1565.001, signature_severity Critical, false_positive Low; sid:9202615; rev:1;)
+
+
+# ============================================================================
+# 08C: MALICIOUS MCP SERVER CONNECTION
+# ============================================================================
+# OpenClaw agent connecting to a malicious MCP server.
+# A malicious MCP server can perform credential theft and prompt injection.
+# ============================================================================
+
+# --- OpenClaw Connecting to External MCP Server on Bare IP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - Agent Connecting to MCP Server on Bare IP"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; http.request_body; content:"jsonrpc"; content:"initialize"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1102, signature_severity Critical, false_positive Low; sid:9202620; rev:1;)
+
+# --- MCP Server Returning Credential Harvest Tool ---
+# A malicious MCP server returns a credential-stealing function in its tool definition
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Server Offering Suspicious Tool (steal/harvest)"; flow:established,to_client; http.response_body; content:"tools"; pcre:"/(steal|harvest|exfil|keylog)/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552, signature_severity Critical, false_positive Low; sid:9202621; rev:1;)
+
+# --- MCP Server Response with Hidden Prompt Injection ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Response Contains Prompt Injection Pattern"; flow:established,to_client; http.response_body; content:"ignore previous"; nocase; content:"instruction"; nocase; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202622; rev:1;)
+
+# --- MCP Tool Response Requesting Shell Execution ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Requesting Shell Execution"; flow:established,to_client; http.response_body; content:"/bin/sh"; content:"-c"; distance:0; within:5; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202623; rev:2;)
+
+# --- MCP Tool Response with curl Command ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Contains curl Download Command"; flow:established,to_client; http.response_body; content:"curl"; content:"http"; distance:0; within:10; content:"|7c|"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9202624; rev:1;)
+
+
+# ============================================================================
+# 08D: MCP SSRF ATTACKS
+# ============================================================================
+# 36.7% of MCP servers are vulnerable to SSRF (Microsoft MarkItDown etc.).
+# Internal service access, metadata endpoint abuse.
+# ============================================================================
+
+# --- SSRF: Internal IP in MCP Tool Request ---
+alert http any any -> any any (msg:"CGTI-OC MCP - SSRF Attempt via MCP Tool (Internal IP Target)"; flow:to_server,established; http.request_body; content:"tools/call"; pcre:"/https?:\/\/(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1090, signature_severity Critical, false_positive Low; sid:9202630; rev:1;)
+
+# --- SSRF: Cloud Metadata Endpoint ---
+alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Cloud Metadata via MCP Tool (169.254.169.254)"; flow:to_server,established; http.request_body; content:"tools/call"; content:"169.254.169.254"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202631; rev:1;)
+
+# --- SSRF: Kubernetes API ---
+alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Kubernetes API via MCP"; flow:to_server,established; http.request_body; content:"tools/call"; pcre:"/https?:\/\/kubernetes/i"; classtype:attempted-admin; priority:1; metadata:mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202632; rev:1;)
+
+
+# ============================================================================
+# 08E: MCP SERVER SCANNING & DISCOVERY
+# ============================================================================
+# Scanners are probing for MCP endpoints (/mcp, /sse).
+# ============================================================================
+
+# --- Rapid MCP Endpoint Probing ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Rapid MCP Endpoint Probing (Multiple Paths)"; flow:to_server,established; http.uri; pcre:"/^\/(mcp|sse|messages)\/?$/"; threshold:type both, track by_src, count 3, seconds 10; classtype:attempted-recon; priority:2; metadata:mitre_attack T1595, signature_severity Major, false_positive Low; sid:9202640; rev:1;)
+
+# --- MCP Protocol Detection in Response (jsonrpc + protocolVersion) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Protocol Fingerprint in Outbound Response"; flow:established,to_client; http.response_body; content:"jsonrpc"; content:"protocolVersion"; distance:0; within:100; classtype:policy-violation; priority:2; metadata:mitre_attack T1190, signature_severity Major, false_positive Low; sid:9202641; rev:1;)
+
+
+# ============================================================================
+# 08F: MCP CREDENTIAL & DATA EXFILTRATION
+# ============================================================================
+# Data exfiltration via a malicious MCP server or a compromised MCP.
+# ============================================================================
+
+# --- MCP Tool Response Leaking API Keys ---
+alert http any any -> any any (msg:"CGTI-OC MCP - API Key in MCP Tool Response (sk- pattern)"; flow:established; content:"jsonrpc"; content:"sk-"; distance:0; within:200; classtype:trojan-activity; priority:2; metadata:mitre_attack T1552.001, signature_severity Major, false_positive Low; sid:9202650; rev:2;)
+
+# --- MCP Tool Response Leaking AWS Credentials ---
+alert http any any -> any any (msg:"CGTI-OC MCP - AWS Credentials in MCP Response"; flow:established; content:"jsonrpc"; content:"aws_secret_access_key"; distance:0; within:500; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202651; rev:1;)
+
+# --- MCP Tool Sending Data to External C2 ---
+# Hidden callback that sends data from malicious tool response to C2
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Context Data POST to Bare IP (Exfiltration)"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; http.request_body; content:"jsonrpc"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1041, signature_severity Critical, false_positive Low; sid:9202652; rev:1;)
+
+# --- Bulk MCP Tool Calls (Automated Abuse) ---
+alert http any any -> any any (msg:"CGTI-OC MCP - Rapid MCP Tool Calls (Automated Abuse)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; threshold:type both, track by_src, count 20, seconds 30; classtype:attempted-admin; priority:2; metadata:mitre_attack T1059, signature_severity Major, false_positive Medium; sid:9202653; rev:1;)
+
+
+# ============================================================================
+# 08G: OPENCLAW MCP INTEGRATION SPECIFIC
+# ============================================================================
+# Risks arising from OpenClaw's mcporter skill and MCP integration.
+# ============================================================================
+
+# --- OpenClaw mcporter Connecting to Unknown MCP Server ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC MCP - OpenClaw mcporter Dynamic DNS Lookup (Potential Malicious MCP)"; dns.query; pcre:"/^[a-z0-9]{10,}\.(ngrok|serveo|localtunnel|bore\.pub|lhr\.life)/i"; classtype:trojan-activity; priority:2; metadata:affected_product OpenClaw, mitre_attack T1572, signature_severity Major, false_positive Low, deployment_note Tunnel services used to expose MCP servers are suspicious in agent context; sid:9202660; rev:1;)
+
+# --- MCP Server via ngrok Tunnel ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Connection via ngrok Tunnel"; flow:to_server,established; http.host; content:"ngrok"; http.request_body; content:"jsonrpc"; classtype:policy-violation; priority:2; metadata:mitre_attack T1572, signature_severity Major, false_positive Low; sid:9202661; rev:1;)
+
+# --- MCP Tool Shadowing Indicator ---
+# Multiple MCP servers defining the same tool name (override attack)
+# DISABLED-FP: Hardcoded tool name database_query — poor detection + FP on legitimate tool descriptions
+# alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Definition Override (Shadowing Indicator)"; flow:established,to_client; http.response_body; content:"tools"; content:"database_query"; content:"database_query"; distance:1; classtype:trojan-activity; priority:2; metadata:mitre_attack T1036, signature_severity Major, false_positive Medium; sid:9202662; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 08: MCP Server Security
+# ============================================================================

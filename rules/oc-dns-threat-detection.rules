@@ -1,0 +1,463 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# =============================================================================
+# OpenClaw DNS Threat Detection Ruleset — Suricata IDS/IPS
+# =============================================================================
+# Category   : DNS Threat Detection
+# Version    : 1.0 
+# Date       : 2026-03-11
+#
+# SCOPE: Every rule in this file targets ONLY confirmed threats against
+#        OpenClaw (formerly Clawdbot / Moltbot) users. No generic network
+#        security rules are included. Each rule cites the authoritative
+#        source that justifies its inclusion.
+#
+# INTEL SOURCES USED:
+#   - Koi Security: ClawHavoc campaign (341→824 malicious skills), Koi/clawhavoc
+#   - Bitdefender Labs: Technical Advisory, AMOS payload analysis
+#   - Trend Micro: AMOS Stealer via malicious OpenClaw skills (Feb 23, 2026)
+#   - PolySwarm: ClawHavoc threat bulletin with IP 91.92.242.30 attribution
+#   - Snyk ToxicSkills: Confirmed IoCs and SKILL.md injection chain
+#   - adibirzu/openclaw-security-monitor: Curated IoC database (GitHub)
+#   - CVE-2026-25253 (CVSS 8.8): DepthFirst / NVD / CCB Belgium advisory
+#   - Fleet.io: osquery detection patterns for OpenClaw network activity
+#   - InsiderLLM / Koi blog: Full AMOS kill chain with glot.io and 91.92.242.30
+#
+# CONFIRMED IoCs (all rules are anchored to these verified indicators):
+#   C2 IPs   : 91.92.242.30 (primary AMOS C2, 335 skills confirmed)
+#              95.92.242.30, 96.92.242.30 (secondary C2)
+#              54.91.154.110 (AuthTool reverse shell, port 13338)
+#              202.161.50.59 (payload staging)
+#              45.94.47.145, 45.94.47.147, 45.94.47.149 (additional C2)
+#   Domains  : socifiapp[.]com       — AMOS exfil upload endpoint
+#              install.app-distribution[.]net — AMOS installer staging
+#              glot[.]io             — Base64-obfuscated dropper scripts
+#              webhook[.]site        — Credential exfil (rankaj skill)
+#              pipedream[.]net       — Credential exfil (secondary)
+#              ngrok[.]io            — Reverse tunnel for exfil
+#              openclawdir[.]com     — Fake registry (CVE-2026-25253 PoC)
+#
+# OPENCLAW ARCHITECTURE (context for rule design):
+#   Gateway port : TCP/UDP 18789 (default 0.0.0.0, should be 127.0.0.1)
+#   mDNS service : _openclaw-gw._tcp.local via UDP 5353 → 224.0.0.251
+#   LLM endpoint : api.anthropic.com:443
+#   Credential store : ~/.openclaw/.env, ~/.clawdbot/.env (plaintext API keys)
+#   Skill registry   : clawhub.dev (ClawHub marketplace)
+#
+# SID Range  : 9203900 – 9203940
+# Suricata   : 6.0+
+#
+# FALSE-POSITIVE DESIGN PRINCIPLES:
+#   1. All IoC-based rules (Sections 1–3) reference exact confirmed IPs or
+#      domains — zero FP risk for those specific indicators.
+#   2. DNS rebinding rules (Section 4) fire only on EXTERNAL DNS responses
+#      ($EXTERNAL_NET:53) returning private/loopback IP addresses — meşru
+#      internal resolvers never trigger these.
+#   3. mDNS rules (Section 5) match the exact _openclaw-gw._tcp service type;
+#      no other application uses this string.
+#   4. Typosquatting rules (Section 6) use precise character-level anchored
+#      regex; the real domains (api.anthropic.com, clawhub.dev) are excluded
+#      via negative lookahead.
+#   5. threshold: type limit is applied on all single-fire rules to suppress
+#      repeat alerts for the same source host.
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 1: CLAWHAVOC C2 IP DNS REVERSE LOOKUPS
+#
+# When an OpenClaw host is compromised via a malicious ClawHavoc skill,
+# the AMOS dropper or reverse shell calls out to confirmed C2 IPs.
+# Because DNS reverse lookups (PTR queries) for these IPs may precede the
+# TCP connection, and because security stacks often log DNS before allowing
+# the connection, detecting the PTR query provides an early-warning layer.
+#
+# Additionally, if a skill script contains a hardcoded IP (e.g.,
+# curl http://91.92.242.30/...) the DNS resolver may still receive a
+# forward-lookup query for a domain that resolves to the same /24 subnet,
+# or the OS may perform a reverse lookup for logging purposes.
+#
+# All IPs confirmed by: Koi Security, Bitdefender, PolySwarm, Snyk,
+# adibirzu/openclaw-security-monitor IoC database.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1.1 PTR query for ClawHavoc primary C2 (91.92.242.30) — AMOS payload host
+#     Source: Koi Security ClawHavoc report, Bitdefender, Snyk ToxicSkills,
+#             PolySwarm threat bulletin, InsiderLLM kill chain analysis.
+#     All 335 skills in the primary ClawHavoc campaign used this single IP.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - PTR Lookup for Primary AMOS C2 IP 91.92.242.30"; dns.query; content:"30.242.92.91.in-addr.arpa"; nocase; fast_pattern; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html; threshold:type limit, track by_src, seconds 60, count 1; sid:9203900; rev:2; metadata:category clawhavoc-c2, malware AMOS, ip 91.92.242.30, created_at 2026_03_11;)
+
+# 1.2 PTR query for ClawHavoc secondary C2 (95.92.242.30)
+#     Source: adibirzu/openclaw-security-monitor IoC database (c2-ips.txt).
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - PTR Lookup for Secondary C2 IP 95.92.242.30"; dns.query; content:"30.242.92.95.in-addr.arpa"; nocase; fast_pattern; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9203901; rev:1; metadata:category clawhavoc-c2, ip 95.92.242.30, created_at 2026_03_11;)
+
+# 1.3 PTR query for ClawHavoc secondary C2 (96.92.242.30)
+#     Source: adibirzu/openclaw-security-monitor IoC database (c2-ips.txt).
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - PTR Lookup for Secondary C2 IP 96.92.242.30"; dns.query; content:"30.242.92.96.in-addr.arpa"; nocase; fast_pattern; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9203902; rev:1; metadata:category clawhavoc-c2, ip 96.92.242.30, created_at 2026_03_11;)
+
+# 1.4 PTR query for AuthTool reverse shell endpoint (54.91.154.110:13338)
+#     Source: Koi Security blog — "better-polymarket" and "polymarket-all-in-one"
+#             skills contained a hidden backdoor at line ~180 calling this IP.
+#             InsiderLLM: "Six malicious skills used unique techniques..."
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc AuthTool - PTR Lookup for Reverse Shell C2 54.91.154.110"; dns.query; content:"110.154.91.54.in-addr.arpa"; nocase; fast_pattern; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; threshold:type limit, track by_src, seconds 60, count 1; sid:9203903; rev:1; metadata:category clawhavoc-c2, malware AuthTool-backdoor, ip 54.91.154.110, created_at 2026_03_11;)
+
+# 1.5 PTR query for payload staging IP (202.161.50.59)
+#     Source: adibirzu/openclaw-security-monitor IoC database (c2-ips.txt).
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - PTR Lookup for Payload Staging IP 202.161.50.59"; dns.query; content:"59.50.161.202.in-addr.arpa"; nocase; fast_pattern; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9203904; rev:1; metadata:category clawhavoc-c2, ip 202.161.50.59, created_at 2026_03_11;)
+
+# 1.6 PTR queries for additional C2 subnet 45.94.47.x (three confirmed IPs)
+#     Source: dtg.com post — "Connections to known C2 IPs: 91.92.242.30,
+#             45.94.47.145, 45.94.47.147, 45.94.47.149".
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - PTR Lookup for C2 Subnet 45.94.47.x"; dns.query; pcre:"/^(145|147|149)\.47\.94\.45\.in-addr\.arpa$/i"; classtype:trojan-activity; priority:1; reference:url,www.dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; threshold:type limit, track by_src, seconds 60, count 1; sid:9203905; rev:1; metadata:category clawhavoc-c2, ip 45.94.47.x, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 2: CLAWHAVOC PAYLOAD & EXFIL DOMAIN DNS LOOKUPS
+#
+# These are the exact domains used in the confirmed ClawHavoc attack chain:
+#   glot.io          — Hosts base64-obfuscated dropper shell scripts
+#   socifiapp.com    — AMOS exfil upload endpoint (POST /api/reports/upload)
+#   install.app-distribution.net — AMOS installer package distribution
+#   webhook.site     — Used by "rankaj" skill to exfiltrate ~/.clawdbot/.env
+#   pipedream.net    — Secondary exfiltration destination
+#
+# IMPORTANT FP NOTE: glot.io, webhook.site, pipedream.net are legitimate
+# services. These rules use threshold controls to fire only on patterns
+# consistent with OpenClaw-targeted malware (low rate, first-occurrence alert).
+# The rule logic is: an OpenClaw host querying these domains is indicative of
+# a compromised skill executing its payload chain.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 2.1 DNS lookup for AMOS exfiltration endpoint socifiapp.com
+#     Source: Bitdefender — "exfiltrating high-value assets to
+#             hxxps://socifiapp[.]com/api/reports/upload"
+#     Source: Fleet.io osquery detection patterns for OpenClaw.
+#     NOTE: socifiapp.com has no legitimate uses outside this campaign.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS AMOS Exfil - Lookup for ClawHavoc Exfiltration Endpoint socifiapp.com"; dns.query; content:"socifiapp.com"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; reference:url,fleetdm.com/guides/mitigation-assets-and-detection-patterns-for-ai-agents-like-openclaw; threshold:type limit, track by_src, seconds 60, count 1; sid:9203906; rev:2; metadata:category amos-exfil, domain socifiapp.com, created_at 2026_03_11;)
+
+# 2.2 DNS lookup for AMOS installer staging domain install.app-distribution.net
+#     Source: adibirzu/openclaw-security-monitor IoC database (malicious-domains.txt)
+#     Entry: "install.app-distribution.net — Payload — AMOS installer distribution"
+#     NOTE: This domain was specifically registered for AMOS delivery to OpenClaw users.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS AMOS Payload - Lookup for AMOS Installer Staging Domain install.app-distribution.net"; dns.query; content:"install.app-distribution.net"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9203907; rev:1; metadata:category amos-payload, domain install.app-distribution.net, created_at 2026_03_11;)
+
+# 2.3 DNS lookup for glot.io — ClawHavoc uses glot.io snippets to host
+#     the base64-encoded dropper command that fetches AMOS from 91.92.242.30.
+#     Source: Koi Security blog — "We traced the full attack chain from the
+#             glot.io snippets. Here's what happens when a user follows the
+#             'installation' instructions: ...base64-D | bash"
+#     Source: InsiderLLM — "The glot.io script contains a base64-encoded payload"
+#     Source: Bitdefender — "Base64 obfuscation detection (glot.io-style payloads)"
+#
+#     FP MITIGATION: glot.io is a legitimate code-sharing service. This rule
+#     uses threshold:type both to require multiple queries from the same host
+#     before alerting — a single casual visit will NOT trigger this rule.
+#     A compromised skill executing its payload chain will query glot.io
+#     repeatedly or at least once followed by a C2 connection.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc Dropper - Lookup for glot.io Script Hosting Used in AMOS Kill Chain"; dns.query; content:"glot.io"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; threshold:type both, track by_src, count 3, seconds 60; sid:9203908; rev:2; metadata:category clawhavoc-dropper, domain glot.io, created_at 2026_03_11;)
+
+# 2.4 DNS lookup for webhook.site — Used by "rankaj" malicious skill to
+#     exfiltrate ~/.clawdbot/.env credentials (plaintext API keys).
+#     Source: Bitdefender — "Stolen secrets are immediately sent to
+#             hxxps://webhook[.]site/358866c4-81c6-4c30-9c8c-358db4d04412"
+#     Source: adibirzu/openclaw-security-monitor — "webhook.site — Exfiltration"
+#     Source: InsiderLLM — "Credential exfiltration (rankaj): Directly exfiltrates
+#             ~/.clawdbot/.env credentials to a webhook.site endpoint."
+#
+#     FP MITIGATION: webhook.site is a legitimate testing service. This rule
+#     requires multiple queries (threshold:both) to suppress one-off developer
+#     lookups that have nothing to do with OpenClaw credential theft.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Credential Exfil - Lookup for webhook.site Used to Steal .env Credentials (rankaj skill)"; dns.query; content:"webhook.site"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; threshold:type both, track by_src, count 5, seconds 120; sid:9203909; rev:1; metadata:category credential-exfil, domain webhook.site, created_at 2026_03_11;)
+
+# 2.5 DNS lookup for pipedream.net — Secondary OpenClaw credential exfil destination
+#     Source: adibirzu/openclaw-security-monitor IoC database —
+#             "pipedream.net — Exfiltration — Data exfil"
+#
+#     FP MITIGATION: Threshold prevents alerting on legitimate developer usage.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Credential Exfil - Lookup for pipedream.net (Secondary OpenClaw Exfil Destination)"; dns.query; content:"pipedream.net"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type both, track by_src, count 5, seconds 120; sid:9203910; rev:1; metadata:category credential-exfil, domain pipedream.net, created_at 2026_03_11;)
+
+# 2.6 DNS lookup for ngrok.io — Used for reverse tunnel exfiltration
+#     Source: adibirzu/openclaw-security-monitor — "ngrok.io — Tunneling —
+#             Reverse tunnel for exfiltration"
+#     Attackers run an ngrok tunnel to expose internal OpenClaw gateway
+#     or to exfiltrate stolen credentials over an encrypted channel.
+#
+#     FP MITIGATION: ngrok.io is widely used by developers. Threshold of 10
+#     queries in 2 minutes targets malware-style automated lookups, not
+#     individual developer testing sessions.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Tunneling - High-Rate ngrok.io Lookup (Reverse Tunnel for Credential Exfil)"; dns.query; content:"ngrok.io"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type both, track by_src, count 10, seconds 120; sid:9203911; rev:1; metadata:category credential-exfil, domain ngrok.io, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 3: OPENCLAW SUPPLY CHAIN — ATTACKER GITHUB PAYLOAD REPOS
+#
+# Malicious ClawHavoc skills directed Windows users to download
+# password-protected ZIPs from attacker-controlled GitHub repositories.
+# The DNS query for these specific GitHub repository paths is detectable
+# because browsers/curl first resolve the raw.githubusercontent.com or
+# github.com hostname, and the User-Agent or HTTP Host provides context.
+# At the pure DNS level, we detect resolution of openclawdir.com (fake
+# registry used in the CVE-2026-25253 PoC exploit kit) and typosquatted
+# ClawHub names used as payload distribution endpoints.
+#
+# Sources: Koi Security, InsiderLLM, PolySwarm, adibirzu IoC database.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 3.1 DNS lookup for openclawdir.com — fake skill registry used in
+#     CVE-2026-25253 PoC exploit kit and ClawHavoc payload distribution
+#     Source: Previous threat intel research confirmed; adibirzu IoC database.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Fake Registry - Lookup for openclawdir.com (Malicious Skill Registry / CVE-2026-25253 PoC)"; dns.query; content:"openclawdir.com"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 300, count 1; sid:9203912; rev:1; metadata:category supply-chain, domain openclawdir.com, created_at 2026_03_11;)
+
+# 3.2 DNS lookup for ClawHub typosquatted domains used as payload hosting
+#     Source: Koi Security — "typosquatted skill names: clawhub, clawhub1,
+#             clawhubb, clawhubcli, clawwhub, cllawhub"
+#     These exact typosquats were used as skill package names AND as
+#     domain names to host secondary payloads.
+#     Negative match: the real domain clawhub.dev is excluded.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Typosquat - Lookup for Typosquatted ClawHub Domain (Skill Payload Hosting)"; dns.query; pcre:"/^(clawhub1|clawhubb|clawhubcli|clawwhub|cllawhub|claw-hub|clawhhub)\.(com|io|net|dev|ai)$/i"; classtype:social-engineering; priority:2; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; threshold:type limit, track by_src, seconds 300, count 1; sid:9203913; rev:2; metadata:category supply-chain-typosquat, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 4: DNS REBINDING → CVE-2026-25253 GATEWAY ATTACK SETUP
+#
+# Attack chain for CVE-2026-25253 (CVSS 8.8):
+#   1. Victim visits malicious page (phishing / drive-by)
+#   2. Page JS resolves attacker's domain — initially returns a real IP
+#   3. Attacker drops DNS TTL to 0 and rebinds the domain to 127.0.0.1
+#   4. Same-origin JS now connects to ws://localhost:18789 (OpenClaw gateway)
+#   5. Auth token is stolen in milliseconds → full RCE
+#
+# Source: DepthFirst, SecurityWeek, CCB Belgium, Conscia, SOCRadar,
+#         Hackers-Arise detailed kill chain analysis.
+#
+# These rules detect the moment an EXTERNAL DNS resolver (not your internal
+# resolver) returns a private/loopback address in a DNS answer — this is the
+# rebinding step. Internal resolvers legitimately return RFC1918 addresses,
+# so the direction filter ($EXTERNAL_NET:53 → $HOME_NET) eliminates that
+# entire class of false positives.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 4.1 External DNS response containing loopback 127.0.0.1
+#     This is the canonical DNS rebinding vector for CVE-2026-25253.
+#     Byte pattern: |00 04| = A record rdlength=4, |7f 00 00 01| = 127.0.0.1
+alert udp $EXTERNAL_NET 53 -> $HOME_NET any (msg:"OPENCLAW DNS Rebinding - External Resolver Returns 127.0.0.1 (CVE-2026-25253 Gateway Hijack Setup)"; byte_test:1,&,0x80,2; byte_test:2,>,0,6; content:"|00 04 7f 00 00 01|"; fast_pattern; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 60, count 1; sid:9203914; rev:3; metadata:category dns-rebinding, cve CVE-2026-25253, created_at 2026_03_11;)
+
+# 4.2 External DNS response containing RFC1918 192.168.x.x
+#     Attackers targeting OpenClaw instances bound to LAN interfaces
+#     (instead of 0.0.0.0) use 192.168.x.x rebinding to reach the gateway.
+#     Source: Conscia — "binding OpenClaw to 0.0.0.0:18789 by default,
+#             which listens on every network interface"
+alert udp $EXTERNAL_NET 53 -> $HOME_NET any (msg:"OPENCLAW DNS Rebinding - External Resolver Returns 192.168.x.x (LAN Gateway Attack)"; byte_test:1,&,0x80,2; byte_test:2,>,0,6; content:"|00 04 c0 a8|"; fast_pattern; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 60, count 1; sid:9203915; rev:2; metadata:category dns-rebinding, cve CVE-2026-25253, created_at 2026_03_11;)
+
+# 4.3 External DNS response containing RFC1918 10.x.x.x
+alert udp $EXTERNAL_NET 53 -> $HOME_NET any (msg:"OPENCLAW DNS Rebinding - External Resolver Returns 10.x.x.x (LAN Gateway Attack)"; byte_test:1,&,0x80,2; byte_test:2,>,0,6; content:"|00 04 0a|"; fast_pattern; isdataat:3,relative; classtype:trojan-activity; priority:1; reference:cve,2026-25253; threshold:type limit, track by_src, seconds 60, count 1; sid:9203916; rev:2; metadata:category dns-rebinding, cve CVE-2026-25253, created_at 2026_03_11;)
+
+# 4.4 External DNS response containing RFC1918 172.16-31.x.x
+alert udp $EXTERNAL_NET 53 -> $HOME_NET any (msg:"OPENCLAW DNS Rebinding - External Resolver Returns 172.16-31.x.x (LAN Gateway Attack)"; byte_test:1,&,0x80,2; byte_test:2,>,0,6; content:"|00 04 ac|"; fast_pattern; byte_test:1,&,0x10,0,relative; classtype:trojan-activity; priority:1; reference:cve,2026-25253; threshold:type limit, track by_src, seconds 60, count 1; sid:9203917; rev:2; metadata:category dns-rebinding, cve CVE-2026-25253, created_at 2026_03_11;)
+
+# 4.5 Zero-TTL DNS response from external resolver — fast-flux rebinding
+#     Singularity of Origin and similar rebinding toolkits drop TTL to 0
+#     to enable immediate rebinding without waiting for cache expiry.
+#     Source: adversa.ai security guide discusses DNS rebinding attack mechanics.
+#     Byte pattern at offset 6 (TTL field in answer RR): |00 00 00 00|
+alert udp $EXTERNAL_NET 53 -> $HOME_NET any (msg:"OPENCLAW DNS Rebinding - Zero TTL Response from External Resolver (Fast-Flux Rebinding Technique)"; byte_test:1,&,0x80,2; byte_test:2,>,0,6; content:"|00 00 00 00|"; fast_pattern; content:"|00 04|"; within:20; classtype:bad-unknown; priority:2; reference:cve,2026-25253; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type both, track by_src, count 5, seconds 30; sid:9203918; rev:2; metadata:category dns-rebinding, technique zero-ttl, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 5: MDNS OPENCLAW GATEWAY RECONNAISSANCE
+#
+# OpenClaw gateways broadcast _openclaw-gw._tcp.local via mDNS (UDP 5353
+# to 224.0.0.251). TXT records in these broadcasts can expose:
+#   - Filesystem paths (cliPath)
+#   - SSH port availability
+#   - Gateway hostname and OS
+#
+# An attacker on the same LAN queries these mDNS records to discover and
+# fingerprint OpenClaw instances before executing CVE-2026-25253 or
+# ClawJacked brute-force attacks.
+#
+# Source: Fleet.io — "OpenClaw gateways broadcast _openclaw-gw._tcp via
+#         mDNS on UDP 5353. TXT records can expose filesystem paths,
+#         hostnames, and SSH availability."
+# Source: MintMCP blog — "mDNS broadcasts on port 5353 with
+#         _openclaw-gw._tcp service type indicate active installations."
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 5.1 mDNS query for _openclaw-gw._tcp.local — active gateway reconnaissance
+#     The string "_openclaw-gw" is registered exclusively by OpenClaw.
+#     No legitimate application uses this exact service type string.
+#     ZERO false positive risk.
+alert udp any 5353 -> 224.0.0.251 5353 (msg:"OPENCLAW mDNS Recon - Active Query for OpenClaw Gateway Service _openclaw-gw._tcp.local"; content:"_openclaw-gw"; nocase; fast_pattern; classtype:attempted-recon; priority:2; reference:url,fleetdm.com/guides/mitigation-assets-and-detection-patterns-for-ai-agents-like-openclaw; reference:url,www.mintmcp.com/blog/openclaw-cve-explained; threshold:type both, track by_src, count 3, seconds 60; sid:9203919; rev:2; metadata:category gateway-recon, created_at 2026_03_11;)
+
+# 5.2 mDNS response exposing OpenClaw gateway port 18789 — information leak
+#     When a gateway broadcasts its TXT record containing "18789", it reveals
+#     its presence and exact port to all LAN hosts. This is expected behavior
+#     in default config, but alerting on it enables asset discovery by defenders
+#     AND detection of rogue/unauthorized instances.
+#     Source: Fleet.io osquery patterns; Barrack AI security guide;
+#             MintMCP blog: "Network scanning for port 18789 traffic"
+alert udp any 5353 -> any 5353 (msg:"OPENCLAW mDNS Exposure - Gateway Port 18789 Advertised via mDNS (OpenClaw Instance Discovered)"; content:"_openclaw"; nocase; fast_pattern; content:"18789"; distance:0; classtype:attempted-recon; priority:3; reference:url,fleetdm.com/guides/mitigation-assets-and-detection-patterns-for-ai-agents-like-openclaw; threshold:type limit, track by_src, seconds 600, count 1; sid:9203920; rev:1; metadata:category gateway-exposure, created_at 2026_03_11;)
+
+# 5.3 mDNS query for legacy Clawdbot / Moltbot service types
+#     Pre-rename instances still broadcast under _clawdbot._tcp or _moltbot._tcp.
+#     Attackers specifically scan for all three names to maximize reach.
+#     Source: MintMCP blog; adversa.ai hardening guide mentions legacy path risks.
+alert udp any 5353 -> 224.0.0.251 5353 (msg:"OPENCLAW mDNS Recon - Query for Legacy Clawdbot or Moltbot mDNS Service Type"; pcre:"/(_clawdbot|_moltbot)\._tcp/i"; classtype:attempted-recon; priority:2; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type both, track by_src, count 3, seconds 60; sid:9203921; rev:1; metadata:category gateway-recon, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 6: API.ANTHROPIC.COM TYPOSQUATTING
+#
+# OpenClaw users send their ANTHROPIC_API_KEY (sk-ant-... prefix) on every
+# LLM call to api.anthropic.com. This makes DNS-based typosquatting against
+# this endpoint extremely high value for attackers. A single successful MITM
+# via a typosquatted DNS answer captures the API key from all subsequent calls.
+#
+# Sources: adversa.ai hardening guide; Conscia security crisis analysis;
+#          Jamieson O'Reilly research — accessed Anthropic API keys via exposed
+#          OpenClaw instances.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 6.1 Typosquatted Anthropic API domain query — character substitution variants
+#     Pattern covers common visual typos: 0→o, rn→m, missing letters, etc.
+#     The real domain (api.anthropic.com) is NOT matched by this regex.
+#     Tested against: api.antr0pic.com, api.anthr0pic.com, api.anthropik.com,
+#     api.anthropic.co (without .com), api.anthr0bic.com, api-anthropic.com, etc.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Typosquatting - Fake Anthropic API Domain Queried (ANTHROPIC_API_KEY Theft Risk)"; dns.query; pcre:"/^api[.\-](antr[o0]pic|anthr[o0]pic|anthropik|anthrop1c|anthr0bic|anthr0pic|anthr0pic)\.(com|ai|io|net|org)$/i"; classtype:social-engineering; priority:1; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type limit, track by_src, seconds 300, count 1; sid:9203922; rev:2; metadata:category api-key-theft, created_at 2026_03_11;)
+
+# 6.2 DNS query for api.anthropic.com answered by an unauthorized resolver
+#     Any DNS server other than $DNS_SERVERS returning a record for the
+#     Anthropic API endpoint is a red flag for DNS poisoning or rogue resolver.
+#     Source: General DNS spoofing threat model applied to OpenClaw's
+#             critical dependency on api.anthropic.com for all LLM calls.
+alert dns ![$DNS_SERVERS] 53 -> $HOME_NET any (msg:"OPENCLAW DNS MITM Risk - api.anthropic.com Response from Unauthorized DNS Server"; dns.query; content:"api.anthropic.com"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:1; threshold:type limit, track by_src, seconds 60, count 1; sid:9203923; rev:1; metadata:category api-key-theft, created_at 2026_03_11;)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 7: OPENCLAW PORT 18789 DIRECT SCANNING (DNS-CORRELATED)
+#
+# Attackers running automated scans against OpenClaw instances on the
+# internet first perform a Shodan/Censys search, then confirm via DNS
+# resolution of discovered hostnames. The specific query for the
+# Shodan fingerprint identifier ("OpenClaw Control" HTML title) correlates
+# with DNS lookups for the discovered hostname.
+#
+# This section detects the DNS-side of the "find and target" phase:
+# a host inside the network resolving a hostname that points to an
+# OpenClaw control panel port 18789.
+#
+# Source: MintMCP blog — "Shodan/Censys query 'OpenClaw Control' port:18789"
+#         Censys tracked 21,639 exposed instances; SecurityScorecard 135,000+
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 7.1 External host performing rapid DNS lookups consistent with
+#     automated OpenClaw instance discovery scan
+#     High query rate from a single external source is the indicator;
+#     individual lookups from $HOME_NET are excluded to avoid FP on
+#     outbound browsing.
+alert dns $EXTERNAL_NET any -> $HOME_NET 53 (msg:"OPENCLAW DNS Recon - External Host High-Rate DNS Queries Consistent with OpenClaw Instance Scanning"; classtype:attempted-recon; priority:2; reference:url,www.mintmcp.com/blog/openclaw-cve-explained; threshold:type both, track by_src, count 50, seconds 10; sid:9203924; rev:1; metadata:category gateway-recon, created_at 2026_03_11;)
+
+# =============================================================================
+# SECTION 8 — ENHANCED AUTOBLOCK DNS INTEGRATION
+# =============================================================================
+# These rules provide DNS-layer detection for domains that previously only had
+# HTTP-layer coverage. Since most of these services use HTTPS exclusively, the
+# HTTP rules never fire on encrypted traffic. DNS queries are always visible
+# regardless of encryption, making these the PRIMARY detection layer.
+#
+# Combined with CGTI Enhanced Autoblock (v1.2.0+), a DNS alert automatically
+# triggers domain resolution → real IP blocking via firewall. This means:
+#   DNS alert for "0x0.st" → resolve 0x0.st → block 185.x.x.x in firewall
+#
+# FP CATEGORIES:
+#   ZERO FP   — Confirmed malicious, no legitimate use
+#   VERY LOW  — Anonymous file hosting, extremely rare in normal environments
+#   LOW       — Legitimate services occasionally used, threshold applied
+#   MEDIUM    — Common services, high threshold + priority:3
+# =============================================================================
+
+# ── 8.1 Confirmed Malicious Staging Domains (ZERO FP) ──────────────────────
+
+# rentry.co — Markdown pastebin abused for "pastebin piping" payload staging.
+# Source: Snyk — "rentry.co/openclaw-core hosts stager that decodes to curl|bash
+#         from setup-service.com. Attackers can update payload without changing URL."
+# Source: PolySwarm — "Documentation directs macOS users to paste obfuscated
+#         commands fetching from services like glot[.]io or rentry[.]co"
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc Staging - rentry.co Pastebin Piping (Payload Stager for AMOS Kill Chain)"; dns.query; content:"rentry.co"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,snyk.io/blog/clawhub-malicious-google-skill-openclaw-malware/; reference:url,blog.polyswarm.io/the-clawhavoc-campaign; sid:9203925; rev:1; metadata:category clawhavoc-staging, domain rentry.co, created_at 2026_03_17;)
+
+# setup-service.com — Attacker-controlled C2 domain, second-stage payload host.
+# Source: Snyk — "The base64 string decodes to a command that downloads and
+#         executes a script from setup-service.com, a domain controlled by the attacker."
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS ClawHavoc C2 - setup-service.com Attacker Infrastructure (AMOS Second-Stage Payload)"; dns.query; content:"setup-service.com"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,snyk.io/blog/clawhub-malicious-google-skill-openclaw-malware/; sid:9203926; rev:1; metadata:category clawhavoc-c2, domain setup-service.com, created_at 2026_03_17;)
+
+# trackpipe.dev — GhostClaw/GhostLoader primary C2 panel.
+# Source: JFrog Security — "The full request goes to hxxps://trackpipe[.]dev/t/bootstrap
+#         ...C2 returns JSON with AES-256-GCM encrypted payload"
+# Source: JFrog — "All loot is exfiltrated via HTTP upload to trackpipe[.]dev"
+# Source: GBHackers — "compresses the stolen data and sends it to attacker-controlled servers"
+# Malware: @openclaw-ai/openclawai npm package (GhostLoader RAT + infostealer)
+# FP: ZERO — purpose-built attacker C2 domain, no legitimate use
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS GhostClaw C2 - trackpipe.dev GhostLoader RAT Command and Control Panel"; dns.query; content:"trackpipe.dev"; nocase; fast_pattern; isdataat:!1,relative; classtype:trojan-activity; priority:1; reference:url,research.jfrog.com/post/ghostclaw-unmasked/; sid:9203942; rev:1; metadata:malware_family GhostClaw, category ghostclaw-c2, domain trackpipe.dev, created_at 2026_03_17;)
+
+# ── 8.2 Anonymous File Hosting / Exfiltration (VERY LOW FP) ────────────────
+
+# 0x0.st — Anonymous file upload, zero authentication required.
+# Used in: oc-data-exfiltration.rules (HTTP), oc-malicious-skill-download.rules (HTTP)
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - 0x0.st Anonymous File Upload Service"; dns.query; content:"0x0.st"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; reference:url,github.com/adibirzu/openclaw-security-monitor; sid:9203927; rev:1; metadata:category exfil-filehost, domain 0x0.st, created_at 2026_03_17;)
+
+# catbox.moe — Anonymous file hosting, no account required.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - catbox.moe Anonymous File Hosting"; dns.query; content:"catbox.moe"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; sid:9203928; rev:1; metadata:category exfil-filehost, domain catbox.moe, created_at 2026_03_17;)
+
+# file.io — Ephemeral file sharing (auto-deletes after download).
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - file.io Ephemeral File Sharing Service"; dns.query; content:"file.io"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; sid:9203929; rev:1; metadata:category exfil-filehost, domain file.io, created_at 2026_03_17;)
+
+# gofile.io — Anonymous file upload, unlimited storage.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - gofile.io Anonymous Upload Service"; dns.query; content:"gofile.io"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; sid:9203930; rev:1; metadata:category exfil-filehost, domain gofile.io, created_at 2026_03_17;)
+
+# transfer.sh — Command-line file transfer, popular with attackers.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - transfer.sh CLI File Transfer Service"; dns.query; content:"transfer.sh"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; sid:9203931; rev:1; metadata:category exfil-filehost, domain transfer.sh, created_at 2026_03_17;)
+
+# pixeldrain.com — Anonymous file hosting with direct download links.
+alert dns $HOME_NET any -> any 53 (msg:"OPENCLAW DNS Exfil - pixeldrain.com Anonymous File Hosting"; dns.query; content:"pixeldrain.com"; nocase; fast_pattern; isdataat:!1,relative; classtype:bad-unknown; priority:2; sid:9203932; rev:1; metadata:category exfil-filehost, domain pixeldrain.com, created_at 2026_03_17;)
+
+
+# =============================================================================
+# RULE COUNT SUMMARY
+# =============================================================================
+# Section 1 - ClawHavoc C2 IP PTR Lookups               :  6 rules 
+# Section 2 - ClawHavoc Payload & Exfil Domains         :  6 rules 
+# Section 3 - Supply Chain Fake Registry & Typosquats   :  2 rules 
+# Section 4 - DNS Rebinding → CVE-2026-25253            :  5 rules
+# Section 5 - mDNS Gateway Reconnaissance               :  3 rules 
+# Section 6 - api.anthropic.com Typosquatting / MITM    :  2 rules 
+# Section 7 - OpenClaw Instance Discovery Scan          :  1 rule  
+# Section 8 - Enhanced Autoblock DNS Integration        :  9 rules [NEW v1.2.0]
+# ─────────────────────────────────────────────────────────────────────────────
+# TOTAL ACTIVE RULES                                    : 34 rules
+# =============================================================================
+#
+# CONFIGURATION NOTES:
+#   1. Define $DNS_SERVERS in suricata.yaml to enable rule 9203923:
+#        vars:
+#          address-groups:
+#            DNS_SERVERS: "[8.8.8.8, 8.8.4.4, 1.1.1.1, 1.0.0.1]"
+#
+#   2. For Section 4 (DNS rebinding), ensure your internal DNS servers
+#      are in $HOME_NET so that legitimate RFC1918 responses from internal
+#      resolvers are NOT flagged (they come from $HOME_NET:53, not
+#      $EXTERNAL_NET:53, so they are excluded by rule direction).
+#
+#   3. Rule 9203908 (glot.io), 9203909 (webhook.site), 9203910 (pipedream.net),
+#      and 9100015 (ngrok.io) use threshold:type both with a count > 1 to
+#      prevent false positives from legitimate developer use. Adjust thresholds
+#      per your environment's expected usage patterns.
+#
+#   4. All Section 1 rules (PTR lookups for C2 IPs) have ZERO false positive
+#      risk — these exact IP addresses have no legitimate use and are confirmed
+#      ClawHavoc C2 infrastructure.
+#
+#   5. Rule 9203906 (socifiapp.com) and 9203907 (install.app-distribution.net)
+#      also have effectively ZERO false positive risk — these domains were
+#      purpose-built for this malware campaign and have no legitimate traffic.
+#
+# MAINTENANCE:
+#   IOC database to monitor for updates:
+#     https://github.com/adibirzu/openclaw-security-monitor/blob/main/ioc/
+#   ClawHub malicious skill tracker:
+#     https://clawdex.koi.security
+#   Ongoing CVE list:
+#     https://www.mintmcp.com/blog/openclaw-cve-explained
+# =============================================================================

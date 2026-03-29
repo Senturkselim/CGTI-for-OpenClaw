@@ -1,0 +1,330 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 04: Malicious Skill Download Detection
+# File: oc-malicious-skill-download.rules
+# SID Range: 9201000 – 9201499
+# Version: 1.0
+# Date: 2026-03-06
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects network traffic during the download and installation phase
+# of malicious skills spreading via the OpenClaw skill marketplace
+# (ClawHub) and alternative distribution channels.
+#
+# Threat landscape:
+# - ClawHavoc: 1,184+ malicious skills (Antiy CERT), 12 publisher accounts
+# - ToxicSkills: 36% of ClawHub skills contain security vulnerabilities (Snyk)
+# - 2,200+ malicious skills on GitHub (Trend Micro)
+# - SkillsMP.com, skills.sh alternative distribution channels
+# - Typosquatting: clawhub, clawhub1, clawhubb, clawhubcli etc. 29 variants
+#
+# Attack techniques:
+# 1. Staged download: SKILL.md → fake prerequisite → curl | bash → AMOS
+# 2. Reverse shell: Functional skill + hidden backdoor (line 180+)
+# 3. Credential exfiltration: .env file → webhook.site
+# 4. Prompt injection: Hidden instructions inside SKILL.md
+# 5. Typosquatting: Variants of popular skill names
+#
+# Distribution channels (skill ZIP download sources):
+# - clawhub.ai (official registry)
+# - SkillsMP.com (third-party marketplace)
+# - skills.sh (third-party)
+# - GitHub raw content / releases
+# - glot.io (payload hosting)
+#
+# DEPLOYMENT NOTES
+# ----------------
+# - Suricata 6.0+ recommended
+# - HTTP inspection + TLS inspection (SNI matching) must be active
+# - dns.query sticky buffer support is required
+#
+# REFERENCES
+# ----------
+# - Koi Security: "ClawHavoc: 341 Malicious Skills" (Feb 2026)
+# - Trend Micro: "Malicious OpenClaw Skills" (Feb 2026)
+# - Antiy CERT: "Trojan/OpenClaw.PolySkill" (Feb 2026)
+# - Snyk: "ToxicSkills" study (Feb 2026)
+# - VirusTotal: "From Automation to Infection" Part I & II (Feb 2026)
+# - Bitdefender: ClawHavoc + AuthTool campaigns (Feb 2026)
+# - Lakera: "Agent Skill Ecosystem" audit (Feb 2026)
+# - Penligent: "ClawHub Malicious Skills Beyond Prompt Injection"
+# ============================================================================
+
+
+# ============================================================================
+# 04A: KNOWN MALICIOUS PAYLOAD HOSTING INFRASTRUCTURE
+# ============================================================================
+# Known payload hosting servers used in the ClawHavoc campaign.
+# Zero FP expected — these infrastructures are verified malicious sources.
+# ============================================================================
+
+# --- glot.io: ClawHavoc Primary Payload Hosting ---
+# ClawHavoc skills instruct users to download scripts from glot.io as a SKILL.md prerequisite
+# Source: Koi Security, Trend Micro, The Hacker News
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - glot.io Script Download (ClawHavoc Delivery Vector)"; flow:established,to_server; http.host; content:"glot.io"; http.method; content:"GET"; classtype:trojan-activity; priority:2; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1195.002, signature_severity Critical, false_positive Low, deployment_note glot.io is the primary ClawHavoc payload hosting platform; reference:url,koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; sid:9201000; rev:2;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - glot.io DNS Lookup (ClawHavoc Delivery)"; dns.query; content:"glot.io"; nocase; endswith; classtype:trojan-activity; priority:3; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Major, false_positive Low; sid:9201001; rev:2;)
+
+# --- ClawHavoc Primary C2 for Payload Delivery ---
+# curl -fsSL http://91.92.242.30/[obfuscated-path]
+alert http $HOME_NET any -> [91.92.242.0/24] any (msg:"CGTI-OC SKILLATTACK - ClawHavoc C2 Payload Download (91.92.242.0/24)"; flow:established,to_server; http.method; content:"GET"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1105, signature_severity Critical, false_positive None; sid:9201002; rev:1;)
+
+
+# ============================================================================
+# 04B: ALTERNATIVE SKILL MARKETPLACE DOWNLOADS
+# ============================================================================
+# Skill distribution platforms outside ClawHub. Malicious skills have
+# also been detected on SkillsMP.com and skills.sh.
+# Source: Trend Micro (Feb 2026)
+# ============================================================================
+
+# --- SkillsMP.com Skill Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - SkillsMP.com Skill Download"; flow:established,to_server; http.host; content:"skillsmp.com"; nocase; classtype:policy-violation; priority:2; metadata:affected_product OpenClaw, mitre_attack T1195.002, signature_severity Major, false_positive Low, deployment_note Third-party skill marketplace with known malicious content; reference:url,trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html; sid:9201010; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - SkillsMP.com DNS Lookup"; dns.query; content:"skillsmp.com"; nocase; endswith; classtype:policy-violation; priority:2; metadata:mitre_attack T1195.002, signature_severity Major, false_positive Low; sid:9201011; rev:1;)
+
+# --- skills.sh Skill Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - skills.sh Skill Download"; flow:established,to_server; http.host; content:"skills.sh"; http.method; content:"GET"; classtype:policy-violation; priority:2; metadata:affected_product OpenClaw, mitre_attack T1195.002, signature_severity Major, false_positive Low; sid:9201012; rev:1;)
+
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - skills.sh DNS Lookup"; dns.query; content:"skills.sh"; nocase; endswith; classtype:policy-violation; priority:2; metadata:mitre_attack T1195.002, signature_severity Major, false_positive Low; sid:9201013; rev:1;)
+
+
+# ============================================================================
+# 04C: CURL PIPE TO BASH / SHELL EXECUTION PATTERNS
+# ============================================================================
+# ClawHavoc's primary attack technique: the fake prerequisite in SKILL.md
+# directs the user to run "curl ... | bash".
+# At the network layer: curl script download → immediate execution patterns.
+# ============================================================================
+
+# --- curl Script Download from Bare IP (Generic Pattern) ---
+# http://[IP]/setup.sh or http://[IP]/[random_path] pattern
+# Legitimate software uses domains; script download from bare IP is suspicious
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Shell Script Download from Bare IP Address"; flow:established,to_server; http.method; content:"GET"; http.uri; pcre:"/\.(sh|bash|command)$/"; http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low, deployment_note Shell script from bare IP is almost always malicious; sid:9201020; rev:1;)
+
+# --- curl | bash Pattern: Shell Script Response to curl ---
+# HTTP response Content-Type: shell or body starting with shebang
+# Request from curl user-agent → shell script is returned
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Shell Script Served to curl (Pipe to Bash Pattern)"; flow:established; http.user_agent; content:"curl"; http.response_body; content:"#!/bin/"; depth:10; classtype:trojan-activity; priority:2; metadata:campaign ClawHavoc, mitre_attack T1059.004, signature_severity Critical, false_positive Medium, deployment_note Legitimate install scripts also use curl pipe to bash pattern; sid:9201021; rev:2;)
+
+# --- wget Script Download + Execute ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Shell Script Download via wget"; flow:established,to_server; http.user_agent; content:"Wget"; http.uri; pcre:"/\.(sh|bash|py|rb|pl)$/"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1059.004, signature_severity Major, false_positive Low; sid:9201022; rev:1;)
+
+# --- Base64-Encoded Payload in HTTP Response ---
+# ClawHavoc: glot.io script → base64 decode → curl C2 → AMOS
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Base64 Encoded Payload with curl in HTTP Response"; flow:established,to_client; http.response_body; content:"base64"; content:"curl"; distance:0; within:100; classtype:trojan-activity; priority:2; metadata:campaign ClawHavoc, mitre_attack T1140, signature_severity Critical, false_positive Low; sid:9201023; rev:2;)
+
+# --- Base64 + eval/exec Pattern ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Base64 Decode + Eval in HTTP Response"; flow:established,to_client; http.response_body; content:"base64"; content:"eval"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:mitre_attack T1140, signature_severity Critical, false_positive Low; sid:9201024; rev:1;)
+
+# --- xattr -c Gatekeeper Bypass in Downloaded Content ---
+# AMOS delivery: xattr -c used to bypass Gatekeeper in downloaded file
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - macOS Gatekeeper Bypass (xattr -c) in Download"; flow:established,to_client; http.response_body; content:"xattr -c"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product macOS, mitre_attack T1553.001, signature_severity Critical, false_positive Very_Low; sid:9201025; rev:1;)
+
+# --- xattr -cr / xattr -d com.apple.quarantine ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - macOS Quarantine Removal in Download (xattr -cr)"; flow:established,to_client; http.response_body; content:"xattr"; content:"quarantine"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1553.001, signature_severity Critical, false_positive Very_Low; sid:9201026; rev:1;)
+
+# --- chmod +x in Downloaded Script ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - chmod +x in Downloaded Content (Make Executable)"; flow:established,to_client; http.response_body; content:"chmod +x"; content:"curl"; distance:0; within:100; classtype:trojan-activity; priority:2; metadata:mitre_attack T1059.004, signature_severity Major, false_positive Low; sid:9201027; rev:1;)
+
+
+# ============================================================================
+# 04D: TYPOSQUAT SKILL & FAKE PACKAGE DETECTION
+# ============================================================================
+# The ClawHavoc campaign published 29+ typosquat ClawHub CLI variants.
+# Fake dependencies such as openclaw-agent and AuthTool were also used.
+# Source: Koi Security detailed typosquat list
+# ============================================================================
+
+# --- Fake openclaw-agent Package Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Fake openclaw-agent Package Download"; flow:established,to_server; http.uri; content:"openclaw-agent"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201030; rev:1;)
+
+# --- AuthTool Fake Dependency Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - AuthTool Fake Dependency Download"; flow:established,to_server; http.uri; content:"AuthTool"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1204.002, signature_severity Critical, false_positive Very_Low; sid:9201031; rev:1;)
+
+# --- openclaw-agent.zip Download (Windows Payload) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - openclaw-agent.zip Download (Windows Payload)"; flow:established,to_server; http.uri; content:"openclaw-agent.zip"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1204.002, signature_severity Critical, false_positive Very_Low; sid:9201032; rev:1;)
+
+# --- ClawHub CLI Typosquat Variants ---
+# Koi Security list: clawhub1, clawhubb, clawhubcli, clawwhub, cllawhub
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - ClawHub Typosquat Domain DNS Lookup (clawhub variant)"; dns.query; pcre:"/^(clawhub[0-9]|clawhubb|clawhubcli|clawwhub|cllawhub|claw-hub|clawhub-[a-z0-9]{3,6})\./i"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1583.001, signature_severity Critical, false_positive Very_Low; sid:9201033; rev:1;)
+
+# --- Fake moltbot/clawdbot Package Names ---
+# Typosquat with legacy names: moltbot-cli, clawdbot-tools
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Legacy Name Typosquat Package (moltbot-cli)"; flow:established,to_server; http.uri; content:"moltbot-cli"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1583.001, signature_severity Critical, false_positive Very_Low; sid:9201034; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Legacy Name Typosquat Package (clawdbot-tools)"; flow:established,to_server; http.uri; content:"clawdbot-tools"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1583.001, signature_severity Critical, false_positive Very_Low; sid:9201035; rev:1;)
+
+
+# ============================================================================
+# 04E: GITHUB RAW CONTENT PAYLOAD DOWNLOAD
+# ============================================================================
+# Attackers distribute payloads via GitHub raw content URLs.
+# Downloading executables/scripts from GitHub with a non-browser user-agent is suspicious.
+# ============================================================================
+
+# --- GitHub Raw Content: Executable Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Raw Content Executable Download"; flow:established,to_server; http.host; content:"raw.githubusercontent.com"; http.user_agent; content:"curl"; http.uri; pcre:"/\.(exe|dmg|zip|tar\.gz|bin|msi|pkg|app)$/i"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1105, signature_severity Major, false_positive Low; sid:9201040; rev:1;)
+
+# --- GitHub Raw: Shell Script Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Raw Shell Script Download (curl)"; flow:established,to_server; http.host; content:"raw.githubusercontent.com"; http.user_agent; content:"curl"; http.uri; pcre:"/\.(sh|bash|command)$/"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1059.004, signature_severity Major, false_positive Medium; sid:9201041; rev:2;)
+
+# --- GitHub Releases: Executable Download via curl ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Releases Executable Download via curl"; flow:established,to_server; http.host; content:"github.com"; http.uri; content:"/releases/download/"; http.user_agent; content:"curl"; classtype:policy-violation; priority:2; metadata:mitre_attack T1105, signature_severity Major, false_positive Medium, deployment_note Legitimate tools also distribute via GitHub releases; sid:9201042; rev:1;)
+
+
+# ============================================================================
+# 04F: SUSPICIOUS SKILL ZIP DOWNLOAD PATTERNS
+# ============================================================================
+# ClawHub skills are downloaded as ZIP files. There is no signature
+# verification or integrity check. The source and size of the ZIP file
+# are analyzed.
+# ============================================================================
+
+# --- ZIP Download from Bare IP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - ZIP File Download from Bare IP Address"; flow:established,to_server; http.method; content:"GET"; http.uri; content:".zip"; endswith; http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1105, signature_severity Critical, false_positive Very_Low; sid:9201050; rev:1;)
+
+# --- ZIP Download from Paste/Code Sharing Sites ---
+# Attackers host payloads on paste sites
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - ZIP/Binary Download from Paste Site (pastebin)"; flow:established,to_server; http.host; content:"pastebin.com"; http.uri; content:"/raw/"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1105, signature_severity Major, false_positive Low; sid:9201051; rev:1;)
+
+# --- ZIP with Password Protection (Stealer Delivery) ---
+# Windows payload: VMProtect-packed stealer in password-protected ZIP
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Password-Protected ZIP Download (Potential Stealer)"; flow:established,to_client; file.data; content:"|50 4b 03 04|"; depth:4; content:"|01 00|"; offset:6; depth:2; classtype:trojan-activity; priority:2; metadata:mitre_attack T1027, signature_severity Major, false_positive Low, deployment_note Encrypted ZIP is common stealer delivery method; sid:9201052; rev:1;)
+
+
+# ============================================================================
+# 04G: POST-INSTALL MALICIOUS NETWORK BEHAVIOR
+# ============================================================================
+# Suspicious network activity triggered immediately after skill installation.
+# Legitimate skills typically do not open outbound connections without a user command.
+# ============================================================================
+
+# --- Immediate Outbound to Bare IP After Skill Context ---
+# HTTP POST to unknown IP after skill installation
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - HTTP POST to Bare IP (Post-Install Callback)"; flow:established,to_server; http.method; content:"POST"; http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1071.001, signature_severity Major, false_positive Low, deployment_note POST to bare IP is suspicious - correlate with skill install timing; sid:9201060; rev:1;)
+
+# --- .env File Content in Outbound POST ---
+# rankaj-style skill: POSTs .env file to webhook.site
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - .env File Exfiltration in POST (Skill Theft)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201061; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Anthropic API Key in Outbound POST"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9201062; rev:1;)
+
+# --- webhook.site Data Exfiltration (rankaj pattern) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - webhook.site POST (Skill Credential Exfiltration)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1567, signature_severity Critical, false_positive Low, deployment_note webhook.site is legitimate but POST from OpenClaw host is suspicious; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; sid:9201063; rev:1;)
+
+# --- Skill Sending Data to Raw IP via HTTP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Credential Data to Raw IP (weak-accept pattern)"; flow:established,to_server; http.method; content:"POST"; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; http.request_body; pcre:"/(api[_-]?key|token|secret|password|credential)/i"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; reference:url,lakera.ai/blog/the-agent-skill-ecosystem-when-ai-extensions-become-a-malware-delivery-channel; sid:9201064; rev:1;)
+
+
+# ============================================================================
+# 04H: MALICIOUS NPM / PYPI PACKAGE INSTALLATION
+# ============================================================================
+# OpenClaw skills use Node.js dependencies. Malicious skills can
+# trigger the installation of known harmful npm/pip packages.
+# ============================================================================
+
+# --- npm Install of Known Malicious Package Names ---
+# openclaw-agent npm package (fake)
+# DISABLED-FP: dns.query matches ALL npm installs — missing package name filter, fires on every npm install
+# alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - npm Registry Lookup for openclaw-agent (Fake Package)"; dns.query; content:"registry.npmjs.org"; classtype:trojan-activity; priority:2; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Major, false_positive Medium, deployment_note Correlate with actual npm install activity; sid:9201070; rev:1;)
+
+# --- pip Install of Suspicious openclaw Package ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - PyPI Download of openclaw-agent Package"; flow:established,to_server; http.host; content:"files.pythonhosted.org"; http.uri; content:"openclaw-agent"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201071; rev:1;)
+
+
+# ============================================================================
+# 04I: SKILL-TRIGGERED PROMPT INJECTION NETWORK INDICATORS
+# ============================================================================
+# A malicious skill contains hidden prompt injection inside SKILL.md.
+# When the agent executes these instructions, they are reflected in network traffic.
+# Source: VirusTotal "From Automation to Infection" Part II
+# ============================================================================
+
+# --- Skill-Triggered Unexpected DNS Resolution ---
+# Unexpected domain resolution when a skill is executed
+# (devinism skill: memetic virus / cognitive rootkit)
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC SKILLATTACK - Suspicious Dynamic DNS Query After Skill Load"; dns.query; pcre:"/^[a-z0-9]{15,}\.(duckdns|no-ip|dynu|freedns|hopto|zapto)\.(org|me|net|io)/i"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1568.002, signature_severity Major, false_positive Low; sid:9201080; rev:1;)
+
+# --- Skill-Triggered File Upload to Unknown Service ---
+# File upload pattern after skill installation
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - File Upload After Skill Context (transfer.sh)"; flow:established,to_server; http.method; content:"PUT"; http.host; content:"transfer.sh"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201081; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - File Upload After Skill Context (file.io)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"file.io"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201082; rev:2;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - File Upload After Skill Context (0x0.st)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"0x0.st"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9201083; rev:1;)
+
+
+# ============================================================================
+# 04J: SUSPICIOUS SKILL CONTENT PATTERNS IN DOWNLOAD
+# ============================================================================
+# Malicious patterns in the content of downloaded skill ZIP/files.
+# These rules inspect the response body of skill download traffic.
+# ============================================================================
+
+# --- SKILL.md with curl | bash Instruction ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains curl pipe to bash"; flow:established,to_client; http.response_body; content:"curl"; content:"|20|bash"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9201090; rev:1;)
+
+# --- SKILL.md with wget | sh Pattern ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains wget pipe to sh"; flow:established,to_client; http.response_body; content:"wget"; content:"|20|sh"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9201091; rev:1;)
+
+# --- Skill with Reverse Shell Code ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains /dev/tcp Reverse Shell"; flow:established,to_client; http.response_body; content:"/dev/tcp/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low; sid:9201092; rev:1;)
+
+# --- Skill with nc -e Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains nc -e Shell"; flow:established,to_client; http.response_body; content:"nc "; content:"-e /bin/"; distance:0; within:20; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9201093; rev:1;)
+
+# --- Skill with Hidden Exfiltration Command ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains .env Exfiltration Code"; flow:established,to_client; http.response_body; content:".env"; content:"webhook"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1552.001, signature_severity Critical, false_positive Low; sid:9201094; rev:1;)
+
+# --- Skill with Keychain Access Code ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains Keychain Access Code"; flow:established,to_client; http.response_body; content:"security find-generic-password"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1555.001, signature_severity Critical, false_positive Very_Low; sid:9201095; rev:1;)
+
+# --- Skill with osascript Password Prompt ---
+# AMOS: displays a fake password dialog using AppleScript
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Downloaded Skill Contains osascript Password Prompt"; flow:established,to_client; http.response_body; content:"osascript"; content:"password"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1056.002, signature_severity Critical, false_positive Very_Low; sid:9201096; rev:1;)
+
+
+# ============================================================================
+# 04K: MALICIOUS SKILL PROPAGATION (SEMANTIC WORM)
+# ============================================================================
+# VirusTotal Part II: Some skills turn the agent into a propagation channel.
+# The agent receives instructions to recommend/install skills to other users.
+# Source: VirusTotal "cgallic/wake-up" skill (semantic worm)
+# ============================================================================
+
+# --- Skill Propagation: Agent Installing Skills Autonomously ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - Autonomous Skill Installation Request (Possible Worm)"; flow:established,to_server; http.host; content:"clawhub.ai"; http.uri; content:"/api/"; content:"install"; threshold:type both, track by_src, count 5, seconds 300; classtype:trojan-activity; priority:2; metadata:mitre_attack T1080, signature_severity Major, false_positive Low, deployment_note Multiple rapid skill installs may indicate worm behavior; sid:9201100; rev:1;)
+
+# --- SOUL.md / AGENTS.md Modification via Network ---
+# Cognitive rootkit: skill modifies agent memory files from the outside
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - SOUL.md Content Fetched from External (Memory Implant)"; flow:established,to_server; http.method; content:"GET"; http.uri; content:"SOUL.md"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1546, signature_severity Critical, false_positive Low; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; sid:9201101; rev:1;)
+
+
+# ============================================================================
+# 04L: KNOWN MALICIOUS PUBLISHER INFRASTRUCTURE
+# ============================================================================
+# Infrastructure used by known ClawHavoc publisher accounts.
+# Source: openclaw-security-monitor IOC database
+# ============================================================================
+
+# --- Known Malicious Publisher GitHub Activity ---
+# hightower6eu: primary account that published 354 malicious packages (Bitdefender)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Access to Known Malicious Publisher (hightower6eu)"; flow:established,to_server; http.host; content:"github.com"; http.uri; content:"hightower6eu"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201110; rev:1;)
+
+# --- Other known malicious publishers ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Access to Known Malicious Publisher (zaycv)"; flow:established,to_server; http.host; content:"github.com"; http.uri; content:"zaycv"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201111; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - GitHub Access to Known Malicious Publisher (Ddoy233)"; flow:established,to_server; http.host; content:"github.com"; http.uri; content:"Ddoy233"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201112; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC SKILLATTACK - ClawHub Comment Author (linhui1010 AMOS Distributor)"; flow:established,to_server; http.host; content:"clawhub.ai"; http.uri; content:"linhui1010"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1195.002, signature_severity Critical, false_positive Very_Low; sid:9201113; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 04: Malicious Skill Download Detection
+# ============================================================================

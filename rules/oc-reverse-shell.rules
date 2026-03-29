@@ -1,0 +1,370 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026   Selim Şentürk
+# ============================================================================
+# CGTI LITE — OpenClaw Community Edition
+# Category 02: Reverse Shell Detection
+# File: oc-reverse-shell.rules
+# SID Range: 9200500 – 9200799
+# Version: 1.0
+# Date: 2026-03-06
+# ============================================================================
+#
+# DESCRIPTION
+# -----------
+# Detects reverse shell activity targeting OpenClaw users over the network.
+# Reverse shell backdoors hidden inside seemingly functional skills have been
+# identified in the ClawHavoc campaign (better-polymarket, polymarket-all-in-one).
+# These skills open a hidden reverse shell at approximately line 180 of the code.
+#
+# Covered reverse shell types:
+# - Known ClawHavoc reverse shell infrastructure (IOC-based)
+# - Bash /dev/tcp and /dev/udp reverse shell
+# - Netcat (nc/ncat) reverse shell
+# - Socat interactive shell
+# - Python pty.spawn reverse shell
+# - Node.js child_process reverse shell (OpenClaw = Node.js)
+# - Perl/Ruby/PHP reverse shell
+# - PowerShell reverse shell (Windows OpenClaw users)
+# - OpenSSL encrypted reverse shell
+# - Mkfifo pipe-based reverse shell
+# - Go/Java reverse shell
+# - Shell prompt and command output detection (attack response)
+# - Offensive tool default ports
+# - webhook.site credential exfiltration (skill-based theft)
+#
+# DEPLOYMENT NOTES
+# ----------------
+# - Suricata 6.0+ recommended
+# - stream.reassembly.depth must be sufficient (at least 1MB)
+# - Reverse shell traffic does not occur in legitimate use → very low FP
+#
+# REFERENCES
+# ----------
+# - VirusTotal: "From Automation to Infection Part II" (Feb 2026)
+# - InsiderLLM: "OpenClaw ClawHub Alert: 341 Malicious Skills"
+# - Koi Security: ClawHavoc Campaign (Feb 2026)
+# - PayloadsAllTheThings: Reverse Shell Cheat Sheet
+# - Corelight: "React2Shell & Next.js RCE" (Dec 2025)
+# - ET Open: emerging-shellcode.rules, emerging-attack_response.rules
+# ============================================================================
+
+
+# ============================================================================
+# 02A: CLAWHAVOC KNOWN REVERSE SHELL INFRASTRUCTURE
+# ============================================================================
+# Known reverse shell IPs and ports identified in the ClawHavoc campaign.
+# Zero FP expected.
+# ============================================================================
+
+# --- ClawHavoc Reverse Shell: 54.91.154.110:13338 ---
+# better-polymarket, polymarket-all-in-one skills
+# Hidden at approximately line 180 of the code — skill appears functional
+# Source: Koi Security, VirusTotal, InsiderLLM
+
+alert tcp $HOME_NET any -> 54.91.154.110 13338 (msg:"CGTI-OC REVSHELL - ClawHavoc Known Reverse Shell (54.91.154.110:13338)"; flow:to_server; classtype:trojan-activity; priority:1; metadata:malware_family ClawHavoc, campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive None; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; sid:9200500; rev:1;)
+
+# --- ClawHavoc: Port 13338 to Any External IP ---
+# Port 13338 is a common hacker alternative (similar to 1337/31337)
+# No legitimate service uses this port
+alert tcp $HOME_NET any -> $EXTERNAL_NET 13338 (msg:"CGTI-OC REVSHELL - Outbound Connection to Port 13338 (ClawHavoc Pattern)"; flow:to_server; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1571, signature_severity Critical, false_positive Very_Low, deployment_note Port 13338 is a known ClawHavoc reverse shell port with no legitimate use; sid:9200501; rev:1;)
+
+# --- ClawHavoc: C2 subnet reverse shell ---
+alert tcp $HOME_NET any -> [91.92.242.0/24] !443 (msg:"CGTI-OC REVSHELL - Outbound to ClawHavoc C2 Subnet Non-HTTPS"; flow:to_server; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1571, signature_severity Critical, false_positive None; sid:9200502; rev:1;)
+
+
+# ============================================================================
+# 02B: OFFENSIVE TOOL DEFAULT PORTS
+# ============================================================================
+# Attackers frequently do not change default ports.
+# Outbound connection to these ports + shell content = very high confidence.
+# ============================================================================
+
+# --- Metasploit Default Port 4444 + Shell Content ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET 4444 (msg:"CGTI-OC REVSHELL - Shell Prompt on Metasploit Default Port 4444"; flow:established; content:"uid="; content:"gid="; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200510; rev:1;)
+
+# --- Metasploit Default 4444 with /bin/sh or /bin/bash ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET 4444 (msg:"CGTI-OC REVSHELL - Shell Binary Path on Port 4444"; flow:established; content:"/bin/"; pcre:"/\/bin\/(sh|bash|zsh|dash|ash|csh)\b/"; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200511; rev:1;)
+
+# --- Common Reverse Shell Port 4242 + Shell Content ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET 4242 (msg:"CGTI-OC REVSHELL - Shell Activity on Common RevShell Port 4242"; flow:established; content:"uid="; content:"gid="; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200512; rev:1;)
+
+# --- Sliver C2 Default Port 8888 (mTLS) ---
+# DISABLED-FP: Port 8888 is used by Jupyter Notebook, MAMP, dev servers — TLS handshake alone is too generic
+# alert tcp $HOME_NET any -> $EXTERNAL_NET 8888 (msg:"CGTI-OC REVSHELL - Outbound TLS to Sliver Default Port 8888"; flow:to_server,established; content:"|16 03|"; depth:2; classtype:trojan-activity; priority:2; metadata:mitre_attack T1571, signature_severity Major, false_positive Low, deployment_note Port 8888 can be used by other services - correlate with TLS anomalies; sid:9200513; rev:1;)
+
+# --- Cobalt Strike Default Team Server Port 50050 ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET 50050 (msg:"CGTI-OC REVSHELL - Outbound to Cobalt Strike Default Port 50050"; flow:to_server; classtype:trojan-activity; priority:1; metadata:mitre_attack T1571, signature_severity Critical, false_positive Very_Low, deployment_note Port 50050 has virtually no legitimate use; sid:9200514; rev:1;)
+
+# --- Leet Speak Ports (31337, 1337) ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET 31337 (msg:"CGTI-OC REVSHELL - Outbound to Classic Backdoor Port 31337"; flow:to_server; classtype:trojan-activity; priority:2; metadata:mitre_attack T1571, signature_severity Major, false_positive Very_Low; sid:9200515; rev:1;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET 1337 (msg:"CGTI-OC REVSHELL - Outbound to Hacker Port 1337"; flow:to_server; content:!"HTTP"; depth:4; classtype:trojan-activity; priority:2; metadata:mitre_attack T1571, signature_severity Major, false_positive Low; sid:9200516; rev:1;)
+
+
+# ============================================================================
+# 02C: SHELL PROMPT & COMMAND OUTPUT DETECTION (ATTACK RESPONSE)
+# ============================================================================
+# Shell prompts and command outputs visible over the network in active
+# reverse shell sessions. These do not occur in legitimate traffic.
+# ============================================================================
+
+# --- Linux: uid=0(root) in Stream ---
+# Output of the 'id' command in a successful reverse shell
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - uid=0(root) in Outbound Stream (Root Shell)"; flow:established,to_server; content:"uid=0|28|root|29|"; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200520; rev:1;)
+
+# --- Linux: uid=N(user) gid=N(group) Pattern ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - uid/gid Output in Non-HTTP Outbound Stream"; flow:established,to_server; content:"uid="; byte_test:5,<,65537,0,relative,string; content:" gid="; within:15; byte_test:5,<,65537,0,relative,string; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200521; rev:1;)
+
+# --- macOS: Shell Prompt Pattern (user@hostname) ---
+# macOS reverse shell: "user@MacBook" or "user@Mac-mini" prompt
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - macOS Shell Prompt in Outbound Stream"; flow:established,to_server; pcre:"/[a-z]+@[a-zA-Z]+-?(Mac|mac|iMac|IMAC|Mini|mini|Pro|pro|Air|air)[^\r\n]{0,30}[\$#%]\s/"; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, affected_product macOS, signature_severity Critical, false_positive Low; sid:9200522; rev:1;)
+
+# --- Linux: root@hostname# Prompt Pattern ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - Root Shell Prompt in Outbound Stream"; flow:established,to_server; content:"root@"; pcre:"/root@[a-zA-Z0-9_-]{1,30}[#:]/"; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200523; rev:1;)
+
+# --- Linux: /etc/passwd Content Exfiltration ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - /etc/passwd Content in Outbound Stream"; flow:established,to_server; content:"root:x:0:0:"; content:"/bin/"; distance:0; within:50; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1003, signature_severity Critical, false_positive Very_Low; sid:9200524; rev:1;)
+
+# --- Command Output: Linux/macOS uname Response ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - uname Output in Outbound Stream (Linux)"; flow:established,to_server; content:"Linux"; content:"GNU/Linux"; distance:0; within:100; classtype:shellcode-detect; priority:2; metadata:mitre_attack T1082, signature_severity Major, false_positive Low; sid:9200525; rev:1;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - uname Output in Outbound Stream (Darwin/macOS)"; flow:established,to_server; content:"Darwin"; content:"Kernel Version"; distance:0; within:100; classtype:shellcode-detect; priority:2; metadata:mitre_attack T1082, signature_severity Major, false_positive Low; sid:9200526; rev:1;)
+
+# --- Directory Listing Output ---
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - Directory Listing in Outbound Stream (drwx)"; flow:established,to_server; content:"drwx"; content:"rwx"; distance:0; within:20; pcre:"/drwx[r-][w-][x-]/"; classtype:shellcode-detect; priority:2; metadata:mitre_attack T1083, signature_severity Major, false_positive Low; sid:9200527; rev:1;)
+
+
+# ============================================================================
+# 02D: BASH / SH REVERSE SHELL PATTERNS
+# ============================================================================
+# Network traces of bash and sh-based reverse shell commands.
+# These are captured when delivered over HTTP.
+# ============================================================================
+
+# --- Bash /dev/tcp Reverse Shell in HTTP Response ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Bash /dev/tcp Reverse Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"/dev/tcp/"; content:"0>&1"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low; sid:9200530; rev:1;)
+
+# --- Bash /dev/udp Reverse Shell in HTTP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Bash /dev/udp Reverse Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"/dev/udp/"; content:"0>&1"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low; sid:9200531; rev:1;)
+
+# --- bash -i Reverse Shell in TCP Stream ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC REVSHELL - bash -i Interactive Shell in Inbound Stream"; flow:established,to_client; content:"bash -i"; content:"/dev/tcp"; distance:0; within:50; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low; sid:9200532; rev:1;)
+
+# --- exec Redirect Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - exec FD Redirect Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"exec "; content:"<>/dev/tcp/"; distance:0; within:30; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.004, signature_severity Critical, false_positive Very_Low; sid:9200533; rev:1;)
+
+
+# ============================================================================
+# 02E: NETCAT / NCAT REVERSE SHELL
+# ============================================================================
+# nc -e /bin/sh, mkfifo pipe, ncat --ssl patterns
+# ============================================================================
+
+# --- nc -e /bin/sh in HTTP/TCP ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Netcat -e Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"nc "; content:"-e /bin/"; distance:0; within:20; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200540; rev:1;)
+
+# --- ncat -e /bin/bash ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Ncat -e Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"ncat "; content:"-e /bin/"; distance:0; within:20; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200541; rev:1;)
+
+# --- Mkfifo Pipe Reverse Shell ---
+# rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc ... >/tmp/f
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Mkfifo Pipe Reverse Shell Pattern in HTTP"; flow:established,to_client; http.response_body; content:"mkfifo"; content:"/bin/sh"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200542; rev:1;)
+
+# --- mknod Pipe Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Mknod Pipe Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"mknod"; content:"/bin/sh"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200543; rev:1;)
+
+# --- nc -c bash ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Netcat -c bash Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"nc "; content:"-c bash"; distance:0; within:20; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200544; rev:1;)
+
+
+# ============================================================================
+# 02F: SOCAT REVERSE SHELL
+# ============================================================================
+
+# --- Socat exec Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Socat exec Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"socat"; content:"exec:"; distance:0; within:30; content:"bash"; distance:0; within:30; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200550; rev:1;)
+
+# --- Socat Static Binary Download ---
+# Attackers download and execute socat as a static binary
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Static Socat Binary Download"; flow:established,to_server; http.uri; content:"static-binaries"; content:"socat"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1105, signature_severity Major, false_positive Low; sid:9200551; rev:1;)
+
+
+# ============================================================================
+# 02G: PYTHON REVERSE SHELL
+# ============================================================================
+# OpenClaw skills can be written in Python — Python reverse shell is
+# one of the most common attack vectors.
+# ============================================================================
+
+# --- Python pty.spawn Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Python pty.spawn Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"import pty"; content:"pty.spawn"; distance:0; within:40; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.006, signature_severity Critical, false_positive Very_Low; sid:9200560; rev:1;)
+
+# --- Python socket Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Python Socket Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"import socket"; content:"subprocess"; distance:0; within:100; content:"/bin/sh"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.006, signature_severity Critical, false_positive Very_Low; sid:9200561; rev:1;)
+
+# --- Python os.popen / subprocess.call Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Python os.popen Shell in HTTP Response"; flow:established,to_client; http.response_body; content:"import os"; content:"os.popen"; distance:0; within:50; content:"/bin/sh"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.006, signature_severity Critical, false_positive Very_Low; sid:9200562; rev:1;)
+
+
+# ============================================================================
+# 02H: NODE.JS REVERSE SHELL (OPENCLAW = NODE.JS)
+# ============================================================================
+# OpenClaw runs on Node.js. Malicious skills can open a reverse shell
+# using Node.js child_process and net.Socket.
+# Source: VirusTotal Part II, OpenClaw security analysis
+# ============================================================================
+
+# --- Node.js child_process + nc Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Node.js child_process nc Shell in HTTP"; flow:established,to_client; http.response_body; content:"child_process"; content:"nc "; distance:0; within:80; content:"-e /bin/"; distance:0; within:30; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low; sid:9200570; rev:1;)
+
+# --- Node.js net.Socket Reverse Shell ---
+# (function(){var net=require("net"),cp=require("child_process"),
+#  sh=cp.spawn("/bin/sh",[]);var client=new net.Socket();
+#  client.connect(PORT,"IP",...
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Node.js net.Socket Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"net.Socket"; content:"child_process"; distance:0; within:100; content:"spawn"; distance:0; within:60; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low; sid:9200571; rev:1;)
+
+# --- Node.js require('child_process').exec Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Node.js child_process.exec Shell in HTTP"; flow:established,to_client; http.response_body; content:"require"; content:"child_process"; distance:0; within:20; content:".exec("; distance:0; within:20; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low; sid:9200572; rev:1;)
+
+# --- Node.js process.mainModule.require Reverse Shell ---
+# Exploit pattern: process.mainModule.require('child_process').execSync(...)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Node.js process.mainModule RCE Pattern"; flow:established,to_client; http.response_body; content:"process.mainModule"; content:"child_process"; distance:0; within:40; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.007, signature_severity Critical, false_positive Very_Low; sid:9200573; rev:1;)
+
+# --- Node.js Reverse Shell in TCP (Skill Execution) ---
+# Outbound shell from the Node.js process after skill execution
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC REVSHELL - Node.js Shell Spawn in TCP Stream"; flow:established; content:"child_process"; content:"spawn"; distance:0; within:40; content:"/bin/sh"; distance:0; within:40; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low; sid:9200574; rev:1;)
+
+
+# ============================================================================
+# 02I: PERL / RUBY / PHP REVERSE SHELL
+# ============================================================================
+
+# --- Perl Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Perl Socket Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"perl"; content:"IO::Socket::INET"; distance:0; within:60; content:"/bin/sh"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200580; rev:1;)
+
+# --- Ruby Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Ruby Socket Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"ruby"; content:"TCPSocket"; distance:0; within:80; content:"/bin/sh"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200581; rev:1;)
+
+# --- PHP Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - PHP fsockopen Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"fsockopen"; content:"/bin/sh"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200582; rev:1;)
+
+# --- Lua Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Lua Socket Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"socket.tcp"; content:"io.popen"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200583; rev:1;)
+
+# --- Go Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Go net.Dial Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"net.Dial"; content:"os/exec"; distance:0; within:80; content:"/bin/sh"; distance:0; within:60; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200584; rev:1;)
+
+
+# ============================================================================
+# 02J: POWERSHELL REVERSE SHELL (WINDOWS OPENCLAW USERS)
+# ============================================================================
+
+# --- PowerShell TCPClient Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - PowerShell TCPClient Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"TCPClient"; content:"GetStream"; distance:0; within:80; content:"$sendback"; distance:0; within:200; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.001, signature_severity Critical, false_positive Very_Low; sid:9200590; rev:1;)
+
+# --- PowerShell Encoded Reverse Shell Download ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - PowerShell Encoded Command in HTTP Response"; flow:established,to_client; http.response_body; content:"powershell"; nocase; content:"-EncodedCommand"; distance:0; within:40; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.001, signature_severity Critical, false_positive Very_Low; sid:9200591; rev:1;)
+
+# --- PowerShell -NonI -W Hidden Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - PowerShell Hidden Window Reverse Shell Pattern"; flow:established,to_client; http.response_body; content:"powershell"; nocase; content:"-W Hidden"; distance:0; within:40; content:"TCPClient"; distance:0; within:200; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.001, signature_severity Critical, false_positive Very_Low; sid:9200592; rev:1;)
+
+# --- PowerShell Invoke-Expression (IEX) Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - PowerShell IEX Download Cradle with Socket"; flow:established,to_client; http.response_body; content:"IEX"; content:"Net.Sockets"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059.001, signature_severity Critical, false_positive Very_Low; sid:9200593; rev:1;)
+
+
+# ============================================================================
+# 02K: ENCRYPTED REVERSE SHELL
+# ============================================================================
+# OpenSSL, ncat --ssl, socat SSL reverse shells.
+# Encryption cannot be inspected but handshake and connection patterns can be detected.
+# ============================================================================
+
+# --- OpenSSL s_client Reverse Shell Pattern ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - OpenSSL s_client Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"openssl"; content:"s_client"; distance:0; within:20; content:"-connect"; distance:0; within:20; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1573, signature_severity Critical, false_positive Very_Low; sid:9200600; rev:1;)
+
+# --- ncat --ssl Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Ncat SSL Reverse Shell in HTTP"; flow:established,to_client; http.response_body; content:"ncat"; content:"--ssl"; distance:0; within:20; content:"-e /bin/"; distance:0; within:30; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1573, signature_severity Critical, false_positive Very_Low; sid:9200601; rev:1;)
+
+
+# ============================================================================
+# 02L: WEBHOOK.SITE CREDENTIAL EXFILTRATION
+# ============================================================================
+# OpenClaw skills exfiltrate credentials via webhook.site (similar to the
+# rankaj skill). webhook.site can be legitimately used as a test service,
+# but sending data via POST from an OpenClaw host is suspicious.
+# Source: Koi Security, VirusTotal Part II
+# ============================================================================
+
+# --- webhook.site POST with Sensitive Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - webhook.site Credential Exfiltration (API Key)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; http.request_body; content:"KEY"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1567, signature_severity Critical, false_positive Low; reference:url,blog.virustotal.com/2026/02/from-automation-to-infection-part-ii.html; sid:9200610; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - webhook.site Credential Exfiltration (Token)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; http.request_body; content:"TOKEN"; nocase; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, mitre_attack T1567, signature_severity Critical, false_positive Low; sid:9200611; rev:1;)
+
+# --- webhook.site .env File Content ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - webhook.site OpenClaw .env File Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; http.request_body; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200612; rev:1;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - webhook.site Anthropic Key Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.host; content:"webhook.site"; http.request_body; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:campaign ClawHavoc, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200613; rev:1;)
+
+
+# ============================================================================
+# 02M: TELNET-BASED REVERSE SHELL
+# ============================================================================
+
+# --- Telnet Dual-Port Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Telnet Dual Reverse Shell Pattern in HTTP"; flow:established,to_client; http.response_body; content:"telnet "; content:"/bin/sh"; distance:0; within:50; content:"telnet "; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200620; rev:1;)
+
+
+# ============================================================================
+# 02N: JAVA REVERSE SHELL
+# ============================================================================
+
+# --- Java Runtime.exec Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Java Runtime.exec Shell in HTTP"; flow:established,to_client; http.response_body; content:"Runtime"; content:"getRuntime"; distance:0; within:20; content:"/dev/tcp/"; distance:0; within:80; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200630; rev:1;)
+
+# --- Java ProcessBuilder Reverse Shell ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC REVSHELL - Java ProcessBuilder Socket Shell in HTTP"; flow:established,to_client; http.response_body; content:"ProcessBuilder"; content:"Socket"; distance:0; within:100; content:"/bin/sh"; distance:0; within:100; classtype:shellcode-detect; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9200631; rev:1;)
+
+
+# ============================================================================
+# 02O: DNS TUNNELING REVERSE SHELL INDICATORS
+# ============================================================================
+# DNS tunneling tools such as iodine and dnscat2 can carry reverse shells
+# ============================================================================
+
+# --- dnscat2 Handshake ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC REVSHELL - dnscat2 DNS Tunnel Handshake"; dns.query; content:"dnscat"; nocase; classtype:trojan-activity; priority:1; metadata:mitre_attack T1572, signature_severity Critical, false_positive Very_Low; sid:9200640; rev:1;)
+
+# --- High Entropy DNS TXT Query (Potential Tunnel) ---
+# DNS tunneling tools use long, high-entropy TXT queries
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC REVSHELL - Suspicious Long DNS TXT Query (Potential Tunnel)"; dns.query; pcre:"/^[a-z0-9]{30,}\./i"; classtype:trojan-activity; priority:3; metadata:mitre_attack T1572, signature_severity Informational, false_positive Medium, deployment_note Threshold tuning recommended; threshold:type both, track by_src, count 20, seconds 60; sid:9200641; rev:1;)
+
+# --- iodine DNS Tunnel ---
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC REVSHELL - Potential iodine DNS Tunnel (Long NULL Query)"; dns.query; pcre:"/^[a-f0-9]{32,}\.[a-z0-9.-]+$/i"; classtype:trojan-activity; priority:2; metadata:mitre_attack T1572, signature_severity Major, false_positive Low; threshold:type both, track by_src, count 30, seconds 60; sid:9200642; rev:1;)
+
+
+# ============================================================================
+# 02P: NODE.JS DEBUG PORT EXPOSURE (OPENCLAW SPECIFIC)
+# ============================================================================
+# Leaving the debug port (9229) of the OpenClaw Node.js process open
+# gives attackers direct RCE capability
+# Source: Medium/@anantjoshi, Nmap scanning
+# ============================================================================
+
+# --- Node.js Inspector/Debug Port 9229 External Access ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 9229 (msg:"CGTI-OC REVSHELL - External Access to Node.js Debug Port 9229"; flow:to_server; content:"GET /json"; depth:10; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low, deployment_note Node.js debug port should never be externally accessible; sid:9200650; rev:1;)
+
+# --- Node.js WebSocket Debugger Access ---
+alert tcp $EXTERNAL_NET any -> $HOME_NET 9229 (msg:"CGTI-OC REVSHELL - Node.js WebSocket Debugger Connection"; flow:to_server; content:"Upgrade: websocket"; nocase; content:"devtools"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059.007, affected_product OpenClaw, signature_severity Critical, false_positive Very_Low; sid:9200651; rev:1;)
+
+
+# ============================================================================
+# END OF CGTI LITE — Category 02: Reverse Shell Detection
+# ============================================================================
+# Total Rules: [validated below]
+# SID Range Used: 9200500 – 9200651
+# Next Available SID: 9200652
+#
+# VALIDATION:
+# grep -c '^alert ' oc-reverse-shell.rules
+# grep -oP 'sid:\d+' oc-reverse-shell.rules | sort | uniq -d
+# ============================================================================
