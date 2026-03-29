@@ -159,7 +159,7 @@ class TestIPBlockManagerValidation(unittest.TestCase):
         result = ipm.block("1.2.3.4; rm -rf /", "test")
         self.assertFalse(result)
 
-   def test_block_accepts_valid_ip(self):
+    def test_block_accepts_valid_ip(self):
         with tempfile.TemporaryDirectory() as td:
             tmp_blocked = Path(td) / "blocked_ips.json"
             tmp_config_dir = Path(td)
