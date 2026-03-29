@@ -107,7 +107,7 @@ class TestToggleRule(unittest.TestCase):
     def test_pass_rule_not_corrupted(self):
         """A '# pass tcp...' rule should keep 'pass' intact after uncommenting."""
         with tempfile.TemporaryDirectory() as td:
-            rf = Path(td) / "test.rules"
+            rf = Path(td) / "oc-test.rules"
             rf.write_text("# pass tcp any any -> any any (msg:\"Test\"; sid:999999; rev:1;)\n")
 
             cfg = cgti_lite.ConfigManager()
@@ -121,7 +121,7 @@ class TestToggleRule(unittest.TestCase):
 
     def test_comment_rule(self):
         with tempfile.TemporaryDirectory() as td:
-            rf = Path(td) / "test.rules"
+            rf = Path(td) / "oc-test.rules"
             rf.write_text("alert tcp any any -> any any (msg:\"Test\"; sid:888888; rev:1;)\n")
 
             cfg = cgti_lite.ConfigManager()
