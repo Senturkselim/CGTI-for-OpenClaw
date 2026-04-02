@@ -320,5 +320,29 @@ alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - WhatsApp
 
 
 # ============================================================================
+# 03H: CVE-2026-34503 — WEBSOCKET SESSION EXPIRATION FAILURE (CVSS 8.1)
+# ============================================================================
+# Active WebSocket sessions not disconnected on device removal/token revocation.
+# Attackers maintain access through stale sessions until forced reconnection.
+# Patched: v2026.3.28 | GHSA-2pr2-hcv6-7gwv | CWE-613
+# ============================================================================
+
+# --- Stale Session: Privileged Operations on Long-Lived Gateway WebSocket ---
+# Detects system.run, config.patch, or exec commands on long-duration sessions.
+# Threshold: 20+ privileged ops in 5 min from same source suggests stale session.
+#DISABLED-FP# FP risk: Power users and automation can exceed 20 system.run calls in 5 minutes
+#DISABLED-FP# alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 Stale Session Indicator (High-Volume Privileged Ops)"; flow:to_server,established; content:"system.run"; threshold:type both, track by_src, count 20, seconds 300; classtype:trojan-activity; priority:1; metadata:cve CVE-2026-34503, mitre_attack T1078.004, signature_severity Critical, false_positive Medium, deployment_note High-volume system.run from single source may indicate stale session after token revocation; reference:url,github.com/openclaw/openclaw/security/advisories/GHSA-2pr2-hcv6-7gwv; sid:9200906; rev:1;)
+
+# --- Device Token Rotation Without Session Disconnect ---
+# device.token.rotate seen but NO subsequent disconnect/reconnect from same source.
+# This is the core CVE pattern: revocation without termination.
+alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 Token Rotation on Gateway (Monitor for Session Termination)"; flow:to_server,established; content:"device.token.rotate"; classtype:policy-violation; priority:2; metadata:cve CVE-2026-34503, mitre_attack T1078, signature_severity Major, false_positive Low, deployment_note Token rotation should be followed by session disconnect - correlate with session logs; sid:9200907; rev:1;)
+
+# --- External IP Performing Operations After Hello Without Re-Auth ---
+# WebSocket operations from EXTERNAL_NET on port 18789 without recent hello.
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 External WebSocket Session with config.patch (Potential Stale)"; flow:to_server,established; content:"config.patch"; classtype:attempted-admin; priority:1; metadata:cve CVE-2026-34503, mitre_attack T1078.004, signature_severity Critical, false_positive Low; sid:9200908; rev:1;)
+
+
+# ============================================================================
 # END OF CGTI LITE — Category 03: WebSocket Attack Detection
 # ============================================================================
