@@ -379,3 +379,21 @@ alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS ClawHavoc C2 - S
 #     https://clawdex.koi.security
 #     https://www.mintmcp.com/blog/openclaw-cve-explained
 # =============================================================================
+
+
+# =============================================================================
+# SECTION 06: macOS DASHBOARD TOKEN LEAK (GHSA-rchv-x836-w7xp)
+# =============================================================================
+# macOS Dashboard exposes auth tokens in URL parameters → browser localStorage.
+# Token visible in browser history, proxy logs, referrer headers.
+# Source: Cryptowisser, GHSA-rchv-x836-w7xp
+# =============================================================================
+
+# --- Auth Token in URL Query String to Gateway ---
+# Catches ?token= or &token= in HTTP request URI to gateway port.
+# Auth tokens should be in headers, not URL parameters.
+alert http any any -> any 18789 (msg:"CGTI-OC CVE - GHSA-rchv Dashboard Token Leak in URL Parameter (macOS)"; flow:to_server,established; http.uri; pcre:"/[?&]token=[a-zA-Z0-9_-]{10,}/"; classtype:policy-violation; priority:1; metadata:ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Low, deployment_note Auth token in URL query string indicates vulnerable macOS Dashboard version; sid:9204420; rev:1;)
+
+# --- Gateway Token in HTTP Referrer Header ---
+# Token leaked via Referrer when navigating away from Dashboard page.
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CVE - GHSA-rchv Gateway Token Leaked in Referrer Header"; flow:established,to_server; http.header; content:"Referer"; content:"token="; distance:0; within:50; content:"18789"; distance:0; within:100; classtype:policy-violation; priority:1; metadata:ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9204421; rev:1;)
