@@ -13,7 +13,7 @@
 #
 """
 ╔══════════════════════════════════════════════════════╗
-║        CGTI Lite for OpenClaw  —  v1.2.1                             ║
+║        CGTI Lite for OpenClaw  —  v1.2.2                             ║
 ║        Suricata IDS/IPS Cross-Platform Manager                       ║
 ║        Windows · macOS · Linux                                       ║
 ╚══════════════════════════════════════════════════════╝
@@ -87,7 +87,7 @@ except ImportError:
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 OS      = platform.system()   # Windows | Linux | Darwin
 
 NPCAP_VERSION   = "1.79"
