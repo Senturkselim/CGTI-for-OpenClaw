@@ -172,7 +172,7 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Potential Bac
 # --- Vidar: Telegram C2 Resolve ---
 # Vidar first connects to a Telegram profile page to retrieve the C2 address
 # The IP/domain is hidden in the profile description
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Telegram Profile C2 Resolve"; flow:established,to_server; http.host; content:"t.me"; http.method; content:"GET"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1102.001, signature_severity Major, false_positive Low, deployment_note Non-browser access to t.me profiles is suspicious; sid:9200040; rev:1;)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC VIDAR - Telegram Profile C2 Resolve"; flow:established,to_server; http.host; content:"t.me"; http.method; content:"GET"; http.user_agent; content:!"Mozilla"; threshold:type both, track by_src, count 3, seconds 300; classtype:trojan-activity; priority:2; metadata:malware_family Vidar, mitre_attack T1102.001, signature_severity Major, false_positive Very_Low, deployment_note Non-browser access to t.me profiles is suspicious; sid:9200040; rev:2;)
 
 # --- Vidar: Steam Profile C2 Resolve ---
 # Backup C2 distribution mechanism: Steam community profile page
@@ -239,22 +239,30 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MACSYNC - API Key Ba
 # ============================================================================
 # Network-based exfiltration patterns common to all infostealer families.
 # Provides high-value detection in the OpenClaw context.
+#
+# NOTE (v1.2.2): Telegram Bot API, Discord webhook, and ZIP archive rules
+# disabled as DUPE — canonical versions with threshold protection are in
+# oc-data-exfiltration.rules (SID:9201520-9201523, 9201610).
 # ============================================================================
 
 # --- Telegram Bot API Data Exfiltration ---
 # Many stealers (PXA, AMOS variants) exfiltrate data via Telegram Bot API
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendDocument)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendDocument"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Critical, false_positive Low, deployment_note Legitimate bots also use this API - correlate with other indicators; sid:9200070; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201520 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendDocument)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendDocument"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Critical, false_positive Low, deployment_note Legitimate bots also use this API - correlate with other indicators; sid:9200070; rev:1;)
 
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendMessage)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendMessage"; threshold:type both, track by_src, count 10, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low; sid:9200071; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201521 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Bot API Exfiltration (sendMessage)"; flow:established,to_server; http.method; content:"POST"; http.host; content:"api.telegram.org"; http.uri; content:"/bot"; content:"/sendMessage"; threshold:type both, track by_src, count 10, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low; sid:9200071; rev:1;)
 
 # --- Discord Webhook Exfiltration ---
 # Stealers send stolen data via Discord webhook
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Discord Webhook Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.host; content:"discord.com"; http.uri; content:"/api/webhooks/"; http.header; content:"multipart/form-data"; threshold:type both, track by_src, count 5, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low, deployment_note May trigger on legitimate Discord bots with file uploads; sid:9200072; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201523 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Discord Webhook Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.host; content:"discord.com"; http.uri; content:"/api/webhooks/"; http.header; content:"multipart/form-data"; threshold:type both, track by_src, count 5, seconds 60; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1567, signature_severity Major, false_positive Low, deployment_note May trigger on legitimate Discord bots with file uploads; sid:9200072; rev:1;)
 
 # --- Generic: ZIP Archive Exfiltration to Rare Domain ---
 # Common stealer behavior: POST collected data as ZIP to unknown server
 # FP reduced via threshold
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - ZIP Archive POST Exfiltration (Generic)"; flow:established,to_server; http.method; content:"POST"; http.header; content:"multipart/form-data"; http.request_body; content:"|50 4b 03 04|"; depth:128; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low, deployment_note ZIP magic bytes in multipart POST body; sid:9200073; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201610 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - ZIP Archive POST Exfiltration (Generic)"; flow:established,to_server; http.method; content:"POST"; http.header; content:"multipart/form-data"; http.request_body; content:"|50 4b 03 04|"; depth:128; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1041, signature_severity Major, false_positive Low, deployment_note ZIP magic bytes in multipart POST body; sid:9200073; rev:1;)
 
 
 # ============================================================================
@@ -263,26 +271,37 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - ZIP Archiv
 # Detection of credential exfiltration from OpenClaw agent identity files
 # and connected services. Vidar's OpenClaw-specific variant targets these files.
 # Source: Hudson Rock (Feb 2026)
+#
+# NOTE (v1.2.2): Generic exfil rules (openclaw.json, device.json, SOUL.md,
+# MEMORY.md, SSH key, AWS creds, keychain, tdata) disabled as DUPE —
+# canonical versions are in oc-data-exfiltration.rules.
+# Remaining active: SID:9200086 (.env generic — complements specific API key rules).
 # ============================================================================
 
 # --- OpenClaw Config File Exfiltration ---
 # Sending openclaw.json, device.json files to external server
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Config File Exfiltration (openclaw.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"openclaw.json"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low, deployment_note openclaw.json contains agent identity and auth tokens; sid:9200080; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201500 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Config File Exfiltration (openclaw.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"openclaw.json"; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low, deployment_note openclaw.json contains agent identity and auth tokens; sid:9200080; rev:1;)
 
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Device File Exfiltration (device.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"device.json"; content:"openclaw"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200081; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201501 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw Device File Exfiltration (device.json)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"device.json"; content:"openclaw"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:malware_family Vidar_OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200081; rev:1;)
 
 # --- OpenClaw SOUL.md / MEMORY.md Exfiltration ---
 # Agent's persistent memory files — target for prompt injection and memory poisoning
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw SOUL.md Memory Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SOUL.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200082; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201502 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw SOUL.md Memory Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SOUL.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200082; rev:1;)
 
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw MEMORY.md Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MEMORY.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200083; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201503 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - OpenClaw MEMORY.md Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"MEMORY.md"; classtype:trojan-activity; priority:2; metadata:malware_family Generic_Stealer, mitre_attack T1005, signature_severity Major, false_positive Very_Low; sid:9200083; rev:1;)
 
 # --- SSH Key Exfiltration ---
 # id_rsa, id_ed25519, id_ecdsa private key exfiltration
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SSH Private Key Exfiltration (RSA)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"-----BEGIN"; content:"PRIVATE KEY-----"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.004, signature_severity Critical, false_positive Very_Low; sid:9200084; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201510 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SSH Private Key Exfiltration (RSA)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"-----BEGIN"; content:"PRIVATE KEY-----"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.004, signature_severity Critical, false_positive Very_Low; sid:9200084; rev:1;)
 
 # --- AWS Credentials Exfiltration ---
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - AWS Credentials Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"aws_access_key_id"; nocase; content:"aws_secret_access_key"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200085; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201511 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - AWS Credentials Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"aws_access_key_id"; nocase; content:"aws_secret_access_key"; nocase; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200085; rev:1;)
 
 # --- .env File Exfiltration ---
 # Exfiltration of .env files containing API keys, tokens, secrets
@@ -290,11 +309,13 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Environmen
 
 # --- Keychain Data Exfiltration (macOS) ---
 # Sending macOS Keychain database or dump to external server
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Keychain Database Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"login.keychain"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1555.001, signature_severity Critical, false_positive Very_Low; sid:9200087; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201580 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC AMOS - Keychain Database Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"login.keychain"; classtype:trojan-activity; priority:1; metadata:malware_family AMOS, mitre_attack T1555.001, signature_severity Critical, false_positive Very_Low; sid:9200087; rev:1;)
 
 # --- Telegram Session Exfiltration ---
 # Telegram session files (tdata/) exfiltration
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Session Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"tdata"; content:"key_datas"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1539, signature_severity Critical, false_positive Very_Low; sid:9200088; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201590 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram Session Data Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"tdata"; content:"key_datas"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1539, signature_severity Critical, false_positive Very_Low; sid:9200088; rev:1;)
 
 
 # ============================================================================
@@ -302,26 +323,34 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Telegram S
 # ============================================================================
 # Common C2 beacon behaviors across infostealer families.
 # These rules carry higher FP risk and are managed via thresholds.
+#
+# NOTE (v1.2.2): IP lookup, SQLite POST, and BIP39 rules disabled as DUPE —
+# canonical versions are in oc-data-exfiltration.rules.
 # ============================================================================
 
 # --- IP Lookup Service (Reconnaissance) ---
 # Stealers use services like ipinfo/ipapi to learn victim's IP
 # Source: Redline, Vidar, AMOS common behavior
-alert dns $HOME_NET any -> any any (msg:"CGTI-OC STEALER - IP Lookup Service DNS Query (api.ip.sb)"; dns.query; content:"api.ip.sb"; nocase; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium, deployment_note May trigger on legitimate IP lookup - correlate with other stealer indicators; sid:9200090; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201622 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert dns $HOME_NET any -> any any (msg:"CGTI-OC STEALER - IP Lookup Service DNS Query (api.ip.sb)"; dns.query; content:"api.ip.sb"; nocase; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium, deployment_note May trigger on legitimate IP lookup - correlate with other stealer indicators; sid:9200090; rev:1;)
 
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP Geolocation API via Non-Browser UA"; flow:established,to_server; http.host; content:"ipinfo.io"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200091; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201620 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP Geolocation API via Non-Browser UA"; flow:established,to_server; http.host; content:"ipinfo.io"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200091; rev:1;)
 
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP API Lookup via Non-Browser UA"; flow:established,to_server; http.host; content:"ip-api.com"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200092; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201621 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - IP API Lookup via Non-Browser UA"; flow:established,to_server; http.host; content:"ip-api.com"; http.user_agent; content:!"Mozilla"; classtype:trojan-activity; priority:3; metadata:malware_family Generic_Stealer, mitre_attack T1016, signature_severity Informational, false_positive Medium; sid:9200092; rev:1;)
 
 # --- Browser Database File Content in POST ---
 # Detection of Chrome/Firefox/Safari cookie/password database content in POST body
 # SQLite header: "SQLite format 3" (0x53 51 4c 69 74 65 20 66 6f 72 6d 61 74 20 33)
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SQLite Database in HTTP POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SQLite format 3"; depth:20; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1555.003, signature_severity Critical, false_positive Very_Low, deployment_note SQLite DB in POST body is strong stealer indicator; sid:9200093; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201560 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - SQLite Database in HTTP POST Body"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"SQLite format 3"; depth:20; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1555.003, signature_severity Critical, false_positive Very_Low, deployment_note SQLite DB in POST body is strong stealer indicator; sid:9200093; rev:1;)
 
 # --- Crypto Wallet Seed Phrase Pattern ---
 # Detection of 12/24 word seed phrase (BIP39) exfiltration
 # Seed phrase format: space-separated lowercase words
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Potential Crypto Seed Phrase Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b.{1,200}\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b/i"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note BIP39 seed words in POST body; sid:9200094; rev:1;)
+#DISABLED-DUPE# Canonical: SID:9201570 in oc-data-exfiltration.rules
+#DISABLED-DUPE# alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC STEALER - Potential Crypto Seed Phrase Exfiltration"; flow:established,to_server; http.method; content:"POST"; http.request_body; pcre:"/\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b.{1,200}\b(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone)\b/i"; classtype:trojan-activity; priority:1; metadata:malware_family Generic_Stealer, mitre_attack T1552, signature_severity Critical, false_positive Very_Low, deployment_note BIP39 seed words in POST body; sid:9200094; rev:1;)
 
 
 # ============================================================================
@@ -412,9 +441,13 @@ alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC GHOSTCLAW - GoFile.i
 # ============================================================================
 # END OF CGTI LITE — Category 01: Infostealer C2 Communication
 # ============================================================================
-# Total Rules: 67
+# Total Rules: 67 (50 active + 17 DISABLED-DUPE)
 # SID Range Used: 9200001 – 9200128
 # Next Available SID: 9200129
+#
+# v1.2.2 CHANGES:
+# - 17 rules disabled as DUPE (canonical versions in oc-data-exfiltration.rules)
+# - SID:9200040 (Vidar t.me) threshold added to reduce Telegram FP
 #
 # VALIDATION:
 # grep -c '^alert ' oc-infostealer-c2.rules
