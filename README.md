@@ -3,14 +3,14 @@
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-brightgreen.svg)](https://www.python.org)
 [![Suricata 6.0+](https://img.shields.io/badge/Suricata-6.0%2B-orange.svg)](https://suricata.io)
-[![Rules](https://img.shields.io/badge/Detection_Rules-646_active-red.svg)](#rule-files)
-[![CVEs](https://img.shields.io/badge/CVEs_Covered-25-critical.svg)](#cves-covered)
+[![Rules](https://img.shields.io/badge/Detection_Rules-642_active-red.svg)](#rule-files)
+[![CVEs](https://img.shields.io/badge/CVEs_Covered-30-critical.svg)](#cves-covered)
 
 > **Purpose-built Suricata IDS/IPS management tool** that protects [OpenClaw](https://openclaw.ai) AI agent users from known threat campaigns, zero-day exploits, and supply-chain attacks.
 >
 > **Windows · macOS · Linux** — Install and run in minutes.
 >
-> **662 total rules** — 646 active + 16 disabled by default (high false-positive risk rules, [see details](#disabled-rules)).
+> **682 total rules** — 642 active + 23 disabled-FP + 17 disabled-DUPE by default (high false-positive risk rules, [see details](#disabled-rules)).
 
 ---
 
@@ -24,7 +24,7 @@ Between January and March 2026, the OpenClaw ecosystem faced an unprecedented se
 - **135,000+ exposed instances** found on the public internet, many with no authentication
 - **AMOS Stealer** — macOS infostealer harvesting `openclaw.json`, API keys, crypto wallets, and SSH credentials
 
-CGTI Lite provides 646 curated Suricata rules covering every stage of these attack chains, wrapped in a cross-platform management console that handles installation, configuration, live monitoring, and active blocking.
+CGTI Lite provides 642 curated Suricata rules covering every stage of these attack chains, wrapped in a cross-platform management console that handles installation, configuration, live monitoring, and active blocking.
 
 ---
 
@@ -55,7 +55,7 @@ CGTI Lite provides 646 curated Suricata rules covering every stage of these atta
 | Feature | Description |
 |---|---|
 | **Cross-Platform** | Full support for Windows, macOS, and Linux with platform-specific installers |
-| **646 Detection Rules** | Purpose-built rules across 13 specialized files — zero SID conflicts, validated namespace |
+| **642 Detection Rules** | Purpose-built rules across 13 specialized files — zero SID conflicts, validated namespace |
 | **IDS + IPS Modes** | Monitor-only (IDS) or active blocking (IPS) with automatic `alert → drop` rule generation |
 | **Live Alert Feed** | Real-time `eve.json` monitoring with color-coded severity display |
 | **Auto-Blocking** | Enhanced Autoblock mode automatically adds OS-native firewall rules for detected threats — bidirectional, DNS-aware, severity-filtered |
@@ -85,7 +85,7 @@ CGTI Lite provides 646 curated Suricata rules covering every stage of these atta
 
 ### CVEs Covered
 
-CGTI Lite includes detection rules for **25 unique CVEs** targeting OpenClaw components:
+CGTI Lite includes detection rules for **30 unique CVEs** targeting OpenClaw components:
 
 | CVE | CVSS | Description |
 |---|---|---|
@@ -93,7 +93,12 @@ CGTI Lite includes detection rules for **25 unique CVEs** targeting OpenClaw com
 | CVE-2026-28446 | 9.8 | Voice extension pre-auth RCE via transcription pipeline |
 | CVE-2026-28363 | 9.9 | `safeBins` bypass via GNU long-option abbreviations |
 | CVE-2026-28484 | 9.8 | Git pre-commit hook option injection |
+| CVE-2026-32920 | 9.8 | Workspace plugin auto-discovery RCE (`.openclaw/extensions/`) |
 | CVE-2026-32059 | HIGH | Remote code execution via crafted skill metadata |
+| CVE-2026-29607 | HIGH | `allow-always` wrapper persistence bypass → approval-free RCE |
+| CVE-2026-28460 | MED | Shell line-continuation (`$\`) allowlist bypass in `system.run` |
+| CVE-2026-34503 | 8.1 | WebSocket session not terminated on token revocation |
+| CVE-2026-33577 | 8.1 | Node pairing scope escalation via missing `callerScopes` validation |
 | CVE-2026-25593 | HIGH | Unauthenticated `config.apply` cliPath command injection |
 | CVE-2026-27487 | HIGH | macOS keychain OAuth token command injection |
 | CVE-2026-24763 | HIGH | Docker PATH environment variable command injection |
@@ -102,7 +107,9 @@ CGTI Lite includes detection rules for **25 unique CVEs** targeting OpenClaw com
 | CVE-2026-26322 | 7.6 | SSRF via gateway tool `gatewayUrl` parameter |
 | CVE-2026-26319 | 7.5 | Telnyx/Twilio webhook authentication fail-open bypass |
 | CVE-2026-22708 | MED | CSS hidden prompt injection in web UI |
-| + 12 more | — | See `openclaw-exploit-detection.rules` and `oc-exploit-cve.rules` |
+| + 12 more | — | See `oc-exploit-detection.rules` and `oc-exploit-cve.rules` |
+
+**Also detected (non-CVE):** CertiK sandbox escape PoC (test-web-searcher skill), MS Teams `groupAllowFrom` sender allowlist bypass, macOS Dashboard token leak (GHSA-rchv-x836-w7xp).
 
 ### Detection Layers
 
@@ -116,23 +123,23 @@ Rules are organized in three detection confidence layers:
 
 ## Rule Files
 
-**13 files · 646 active rules (662 total) · SID range 9200001–9204419 · zero conflicts**
+**13 files · 642 active rules (682 total) · SID range 9200001–9204421 · zero conflicts**
 
 | # | File | SID Range | Active | Coverage |
 |---|---|---|---|---|
-| 01 | `oc-infostealer-c2.rules` | 9200001–9200128 | 67 | AMOS/Vidar/GhostClaw C2, credential theft, stealer panels |
+| 01 | `oc-infostealer-c2.rules` | 9200001–9200128 | 50 | AMOS/Vidar/GhostClaw C2, credential theft, stealer panels |
 | 02 | `oc-reverse-shell.rules` | 9200500–9200651 | 59 | Reverse shells (bash, netcat, Python, Node.js, PowerShell, Go, Java) |
-| 03 | `oc-websocket-attack.rules` | 9200800–9200905 | 43 | WebSocket gateway attacks (CVE-2026-25253, ClawJacked, log poisoning) |
+| 03 | `oc-websocket-attack.rules` | 9200800–9200908 | 45 | WebSocket gateway attacks (CVE-2026-25253, ClawJacked, log poisoning) |
 | 04 | `oc-malicious-skill-download.rules` | 9201000–9201113 | 50 | Malicious skill install, typosquatting, supply-chain |
 | 05 | `oc-data-exfiltration.rules` | 9201500–9201631 | 57 | Credential exfil (Telegram, Discord, Slack, cloud storage, paste sites) |
-| 06 | `oc-gateway-exposure.rules` | 9202000–9202091 | 42 | Exposed gateway, Moltbook, scanner detection, lateral movement |
+| 06 | `oc-gateway-exposure.rules` | 9202000–9202095 | 45 | Exposed gateway, Moltbook, scanner detection, lateral movement |
 | 07 | `oc-cryptostealer-activity.rules` | 9202300–9202381 | 41 | Crypto wallet theft, mining, seed phrases, exchange API keys, drainers |
 | 08 | `oc-mcp-security.rules` | 9202600–9202662 | 24 | MCP endpoint security, SSRF, tool injection, credential exfil |
-| 09 | `oc-exploit-cve.rules` | 9202900–9203012 | 37 | CVE-specific exploit signatures (base set) |
-| 10 | `oc-exploit-detection.rules` | 9203050–9203139 | 89 | Extended CVE coverage (25 CVEs, full kill-chain, 35 sections) |
+| 09 | `oc-exploit-cve.rules` | 9202900–9203020 | 40 | CVE-specific exploit signatures (base set + v1.2.2 additions) |
+| 10 | `oc-exploit-detection.rules` | 9203050–9203142 | 92 | Extended CVE coverage (30 CVEs, full kill-chain, 38 sections) |
 | 11 | `oc-threat-intel-ioc.rules` | 9203400–9203483 | 83 | Threat intel IOCs, malicious publishers, supply-chain attacks |
 | 12 | `oc-dns-threat-detection.rules` | 9203900–9203942 | 34 | DNS C2, rebinding, typosquatting, mDNS recon, Enhanced Autoblock |
-| 13 | `oc-tls-certificate-anomaly.rules` | 9204400–9204419 | 20 | TLS/cert MITM, TOFU attacks, JA3, Anthropic API protection |
+| 13 | `oc-tls-certificate-anomaly.rules` | 9204400–9204421 | 22 | TLS/cert MITM, TOFU attacks, JA3, Anthropic API protection |
 
 All rule files are self-contained and can be loaded simultaneously with no additional configuration.
 
@@ -181,10 +188,9 @@ python cgti_lite.py install
 cgti install
 
 # 2. Start Suricata monitoring
-sudo cgti start                  # Interactive — select interface from list
-sudo cgti start -i eth0          # Linux (direct)
-cgti start -i "Wi-Fi"            # Windows (direct)
-sudo cgti start -i en0           # macOS (direct)
+sudo cgti start -i eth0          # Linux
+cgti start -i "Wi-Fi"            # Windows
+sudo cgti start -i en0           # macOS
 
 # 3. Watch live alerts
 cgti live
@@ -309,6 +315,8 @@ CGTI Lite rules were designed with a strict FP-prevention methodology: every rul
 
 16 rules are **disabled by default** because they fire on normal OpenClaw operations. Each disabled rule has a `# DISABLED-FP:` comment explaining the reason. You can re-enable them if your deployment does not use the affected feature.
 
+**v1.2.2 additionally disabled 7 new FP-risk rules** (`#DISABLED-FP#`) and **17 duplicate rules** (`#DISABLED-DUPE#`).
+
 | SID | File | Reason | Re-enable if... |
 |---|---|---|---|
 | 9200835 | websocket-attack | `device.register` fires on every legitimate device pairing | You never pair new devices |
@@ -317,16 +325,25 @@ CGTI Lite rules were designed with a strict FP-prevention methodology: every rul
 | 9200838 | websocket-attack | `skill.install` fires on every skill installation | You have a locked skill set |
 | 9200839 | websocket-attack | `log.read` fires on every log access | You never read logs via WebSocket |
 | 9200872 | websocket-attack | Python REPL detection — REPL is a core OpenClaw feature | You don't use the Python REPL |
+| 9200906 | websocket-attack | `system.run` volume threshold (20/5min) — power users exceed this | You want stale-session detection |
 | 9202012 | gateway-exposure | Python REPL detection (gateway context) — same as above | Same as above |
 | 9202071 | gateway-exposure | `HOME_NET → HOME_NET [22,3306,5432,6379,27017]` — no OpenClaw-specific content, fires on all internal DB/SSH traffic | You want to monitor ALL east-west traffic |
+| 9202094 | gateway-exposure | `msteams` + `channelId` — fires on ALL legitimate Teams messages | You don't use MS Teams integration |
 | 9202610 | mcp-security | `tools/call + exec` — matches legitimate MCP tools like `execute_query`, `exec_sql` | You don't use any MCP tool with "exec" in its name |
 | 9202614 | mcp-security | `tools/call + read_file` — standard filesystem MCP tool | You don't use the filesystem MCP server |
 | 9202615 | mcp-security | `tools/call + write_file` — standard filesystem MCP tool | You don't use the filesystem MCP server |
 | 9202662 | mcp-security | Hardcoded `database_query` tool name — poor detection quality | N/A — detection logic is flawed |
 | 9201070 | skill-download | `registry.npmjs.org` DNS — fires on every `npm install` command | Your OpenClaw host never runs npm |
 | 9200513 | reverse-shell | Port 8888 + TLS handshake — fires on Jupyter Notebook, MAMP, dev servers | No dev tools run on port 8888 |
+| 9203014 | exploit-cve | `.openclaw/extensions/package.json` in HTTP response — matches documentation pages | You have TLS-inspecting proxy and want plugin delivery detection |
+| 9203015 | exploit-cve | Gateway outbound TLS — fires on ALL outbound connections (AI APIs, webhooks) | Never — this rule is fundamentally too broad |
+| 9203016 | exploit-cve | `/usr/bin/env` + `sh -c` in `system.run` — common in legitimate commands | You never run env-wrapped shell commands via OpenClaw |
+| 9203017 | exploit-cve | `nohup/timeout/stdbuf` in `system.run` — common in automation | You never use these utilities via OpenClaw |
+| 9203020 | exploit-cve | `$(` command substitution in `system.run` — standard shell usage | You never use `$()` in commands via OpenClaw |
 | 9203124 | exploit-detection | `[SYSTEM]+exec` in ALL HTTP responses — fires on tech docs and blog pages | You want aggressive prompt injection detection |
 | 9203482 | threat-intel-ioc | Duplicate of SID:9203124 | Same as above |
+
+**17 duplicate rules** in `oc-infostealer-c2.rules` are disabled with `#DISABLED-DUPE#` — each has a canonical version in `oc-data-exfiltration.rules` with proper threshold protection. See the [CHANGELOG](CHANGELOG.md) for the full list.
 
 To re-enable a disabled rule:
 
@@ -348,7 +365,7 @@ cgti rules add 'alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"LOCAL - Disc
 
 **If you use Telegram Bot API:**
 
-SIDs 9201520–9201522 and 9200070–9200071 detect Telegram Bot API calls. They have threshold protection (3–15 requests per 60 seconds). If your bot makes frequent API calls, consider raising the threshold or lowering the priority.
+SIDs 9201520–9201522 detect Telegram Bot API calls (`sendDocument`, `sendMessage`, `sendPhoto`). They have threshold protection (3–15 requests per 60 seconds). In v1.2.2, the duplicate rules without thresholds (SID:9200070–9200071) were disabled — canonical detection now lives exclusively in `oc-data-exfiltration.rules` with consistent threshold protection. If your bot makes frequent API calls, consider raising the threshold or lowering the priority.
 
 **If you run crypto trading bots:**
 
@@ -530,19 +547,19 @@ When adding new rules, use SIDs within the allocated range for each category:
 
 | Category | SID Range | Current Max |
 |---|---|---|
-| Infostealer C2 | 9200001–9200499 | 9200123 |
+| Infostealer C2 | 9200001–9200499 | 9200128 |
 | Reverse Shell | 9200500–9200799 | 9200651 |
-| WebSocket Attack | 9200800–9200999 | 9200905 |
+| WebSocket Attack | 9200800–9200999 | 9200908 |
 | Malicious Skill Download | 9201000–9201499 | 9201113 |
 | Data Exfiltration | 9201500–9201999 | 9201631 |
-| Gateway Exposure | 9202000–9202299 | 9202091 |
+| Gateway Exposure | 9202000–9202299 | 9202095 |
 | Cryptostealer Activity | 9202300–9202599 | 9202381 |
 | MCP Security | 9202600–9202899 | 9202662 |
-| Exploit CVE (base) | 9202900–9203049 | 9203012 |
-| Exploit Detection (extended) | 9203050–9203399 | 9203139 |
+| Exploit CVE (base) | 9202900–9203049 | 9203020 |
+| Exploit Detection (extended) | 9203050–9203399 | 9203142 |
 | Threat Intel IOC | 9203400–9203899 | 9203483 |
-| DNS Threat Detection | 9203900–9204399 | 9203924 |
-| TLS/Certificate Anomaly | 9204400–9204999 | 9204419 |
+| DNS Threat Detection | 9203900–9204399 | 9203942 |
+| TLS/Certificate Anomaly | 9204400–9204999 | 9204421 |
 
 ### Rule Metadata Standard
 

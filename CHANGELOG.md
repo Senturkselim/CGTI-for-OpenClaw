@@ -2,6 +2,36 @@
 
 All notable changes to CGTI Lite for OpenClaw will be documented in this file.
 
+## [1.2.2] — 2026-04-02
+
+### Added
+- **5 new CVE detection rules** (active):
+  - CVE-2026-32920 (CVSS 9.8): Workspace plugin auto-discovery RCE — `.openclaw/extensions/` archive delivery detection (SID:9203013)
+  - CVE-2026-29607: `allow-always` wrapper persistence bypass — `allow-always` + `system.run` approval pattern (SID:9203018)
+  - CVE-2026-28460: Shell line-continuation allowlist bypass — `$\` in `system.run` detection (SID:9203019)
+  - CVE-2026-34503 (CVSS 8.1): WebSocket session expiration failure — `device.token.rotate` monitoring + external `config.patch` (SID:9200907–9200908)
+  - CVE-2026-33577: Node pairing scope escalation — `pair` + `approve` + `operator.admin` detection (SID:9202092–9202093)
+- **CertiK sandbox bypass pattern** — Telegram-triggered `system.run` skill invocation, `sandbox.mode=off` API write, `tools.exec.host=gateway` (SID:9203140–9203142)
+- **MS Teams authorization bypass** — `feedback` + `msteams` sender allowlist bypass (SID:9202095)
+- **macOS Dashboard token leak** (GHSA-rchv-x836-w7xp) — auth token in URL parameter + Referrer header leak (SID:9204420–9204421)
+- **Git executable hijack** and **IPv6 SSRF guard bypass** documented as pending CVEs in README
+
+### Fixed
+- **Telegram Bot API false positives**: SID:9200070 (sendDocument) had **no threshold** — fired on every single API call. Disabled as duplicate; canonical rule SID:9201520 in `oc-data-exfiltration.rules` has proper `threshold:type both, track by_src, count 5, seconds 60`
+- **Vidar t.me false positives**: SID:9200040 now has `threshold:type both, track by_src, count 3, seconds 300` — single non-browser access to t.me no longer triggers; requires 3+ in 5 minutes
+- **17 duplicate rules eliminated**: Cross-file SID duplicates between `oc-infostealer-c2.rules` and `oc-data-exfiltration.rules` disabled with `#DISABLED-DUPE#` — each references the canonical SID. Zero cross-file duplicates remain.
+- **7 high-FP-risk rules disabled by default**: New rules that fire on legitimate operations (gateway outbound TLS, Teams messages, `/usr/bin/env` commands, `$()` substitution, nohup/timeout, system.run volume) — all marked `#DISABLED-FP#`
+
+### Changed
+- `oc-infostealer-c2.rules`: 67 → 50 active (17 DISABLED-DUPE)
+- `oc-exploit-cve.rules`: 37 → 40 active (5 DISABLED-FP), SID range extended to 9203020
+- `oc-exploit-detection.rules`: 89 → 92 active, SID range extended to 9203142
+- `oc-gateway-exposure.rules`: 42 → 45 active (1 DISABLED-FP), SID range extended to 9202095
+- `oc-websocket-attack.rules`: 43 → 45 active (1 DISABLED-FP), SID range extended to 9200908
+- `oc-tls-certificate-anomaly.rules`: 20 → 22 active, SID range extended to 9204421
+- Total: 642 active + 23 disabled-FP + 17 disabled-DUPE = 682 rules (was 662)
+- Version bumped to 1.2.2
+
 ## [1.2.1] — 2026-03-29
 
 ### Fixed
