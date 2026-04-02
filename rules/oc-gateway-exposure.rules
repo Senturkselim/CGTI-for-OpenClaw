@@ -256,5 +256,39 @@ alert http any any -> any 18789 (msg:"CGTI-OC GWEXPOSE - gatewayUrl Parameter wi
 
 
 # ============================================================================
+# 06H: CVE-2026-33577 — NODE PAIRING SCOPE ESCALATION (CVSS 8.1)
+# ============================================================================
+# node.pair.approve missing callerScopes validation.
+# Low-privilege operators approve nodes with broader scopes → privilege escalation.
+# Patched: v2026.3.28 | GHSA-2x4x-cc5g-qmmg | CWE-863
+# ============================================================================
+
+# --- node.pair.approve with Broad Scope Request ---
+# Catches pairing approval commands containing scope escalation keywords.
+alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-33577 Node Pairing Approval (Potential Scope Escalation)"; flow:to_server,established; content:"pair"; content:"approve"; distance:0; within:30; classtype:attempted-admin; priority:1; metadata:cve CVE-2026-33577, mitre_attack T1078.003, signature_severity Critical, false_positive Low, deployment_note All pair-approve commands should be audited for scope escalation; reference:url,github.com/openclaw/openclaw/security/advisories/GHSA-2x4x-cc5g-qmmg; sid:9202092; rev:1;)
+
+# --- Node Pairing with operator.admin Scope Requested ---
+# Detects scope escalation: pairing request explicitly requesting admin scope.
+alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-33577 Node Pairing with operator.admin Scope (Privilege Escalation)"; flow:to_server,established; content:"pair"; content:"operator.admin"; distance:0; within:200; classtype:attempted-admin; priority:1; metadata:cve CVE-2026-33577, mitre_attack T1548, signature_severity Critical, false_positive Very_Low; sid:9202093; rev:1;)
+
+
+# ============================================================================
+# 06I: MS TEAMS AUTHORIZATION BYPASS (groupAllowFrom)
+# ============================================================================
+# Empty groupAllowFrom + route allowlist → wildcard authorization for any
+# Teams member to trigger bot in allowlisted channels.
+# Fix: v2026.3.8 | Source: DailyCVE, OpenClaw Security
+# ============================================================================
+
+# --- Teams Webhook with Allowlist Route but No Sender Validation ---
+# Detects inbound Teams webhook traffic to gateway — monitor for bypass.
+# DISABLED-FP: Every legitimate Teams message contains msteams+channelId — fires on ALL Teams traffic
+#DISABLED-FP# alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - MS Teams Webhook to Gateway (Monitor for groupAllowFrom Bypass)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"msteams"; content:"channelId"; distance:0; within:200; classtype:policy-violation; priority:2; metadata:mitre_attack T1190, signature_severity Major, false_positive Medium, deployment_note MS Teams messages to gateway - verify groupAllowFrom is not empty; sid:9202094; rev:1;)
+
+# --- Teams Feedback Invocation (Sender Allowlist Bypass) ---
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC GWEXPOSE - MS Teams Feedback Bypass (Unauthorized Session Feedback)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"feedback"; content:"msteams"; distance:0; within:100; classtype:attempted-admin; priority:2; metadata:mitre_attack T1190, signature_severity Major, false_positive Low; sid:9202095; rev:1;)
+
+
+# ============================================================================
 # END OF CGTI LITE — Category 06: Gateway & Agent Exposure Detection
 # ============================================================================
