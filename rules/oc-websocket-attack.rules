@@ -73,25 +73,25 @@
 
 # --- External Inbound to Gateway Port 18789 ---
 
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - External Inbound Connection to OpenClaw Gateway Port 18789"; flow:to_server; classtype:attempted-recon; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low, deployment_note Port 18789 is OpenClaw default gateway - external access should never occur; sid:9200800; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - External Inbound Connection to OpenClaw Gateway Port 18789"; flow:to_server; classtype:attempted-recon; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low, deployment_note Port 18789 is OpenClaw default gateway - external access should never occur; sid:9200800; rev:1;)
 
 # --- WebSocket Upgrade Request to Gateway from External ---
-alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - External WebSocket Upgrade to OpenClaw Gateway"; flow:to_server,established; http.method; content:"GET"; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; sid:9200801; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - External WebSocket Upgrade to OpenClaw Gateway"; flow:to_server,established; http.method; content:"GET"; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; classtype:attempted-admin; priority:1; metadata:tier exploit, affected_product OpenClaw, mitre_attack T1190, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; sid:9200801; rev:1;)
 
 # --- OpenClaw Control UI Fingerprint from External ---
 # Shodan/Censys scanners look for the "OpenClaw Control" HTML title
-alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenClaw Control UI Served to External Client"; flow:established,to_client; http.response_body; content:"OpenClaw Control"; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9200802; rev:1;)
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenClaw Control UI Served to External Client"; flow:established,to_client; http.response_body; content:"OpenClaw Control"; classtype:policy-violation; priority:3; metadata:tier policy, affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9200802; rev:2;)
 
 # --- Legacy Moltbot/Clawdbot Control UI Fingerprint ---
-alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Legacy Moltbot/Clawdbot Control UI Served Externally"; flow:established,to_client; http.response_body; pcre:"/(Moltbot|Clawdbot)\s+Control/i"; classtype:policy-violation; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9200803; rev:1;)
+alert http $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Legacy Moltbot/Clawdbot Control UI Served Externally"; flow:established,to_client; http.response_body; pcre:"/(Moltbot|Clawdbot)\s+Control/i"; classtype:policy-violation; priority:3; metadata:tier policy, affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9200803; rev:2;)
 
 # --- Gateway Port Scan Detection ---
 # Rapid SYN scan on port 18789
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Port 18789 Scan from External"; flow:to_server; flags:S; threshold:type both, track by_src, count 5, seconds 10; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9200804; rev:2;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Port 18789 Scan from External"; flow:to_server; flags:S; threshold:type both, track by_src, count 5, seconds 10; classtype:attempted-recon; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9200804; rev:2;)
 
 # --- Gateway on Alternative Web Ports (80/443 reverse proxy) ---
 # Some users run the gateway behind a reverse proxy on 80/443
-alert http $EXTERNAL_NET any -> $HOME_NET $HTTP_PORTS (msg:"CGTI-OC WSATTACK - OpenClaw Gateway via Reverse Proxy (HTTP)"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; http.uri; content:"gatewayUrl"; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9200805; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET $HTTP_PORTS (msg:"CGTI-OC WSATTACK - OpenClaw Gateway via Reverse Proxy (HTTP)"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; http.uri; content:"gatewayUrl"; classtype:attempted-admin; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9200805; rev:1;)
 
 
 # ============================================================================
@@ -104,20 +104,20 @@ alert http $EXTERNAL_NET any -> $HOME_NET $HTTP_PORTS (msg:"CGTI-OC WSATTACK - O
 
 # --- gatewayUrl Parameter in HTTP Request (Redirect Attack) ---
 # Attacker: http://localhost:18789/?gatewayUrl=ws://attacker.com:8080
-alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - CVE-2026-25253 gatewayUrl Parameter Manipulation"; flow:to_server,established; http.uri; content:"gatewayUrl="; content:"ws"; distance:0; within:5; pcre:"/gatewayUrl=wss?:\/\/(?!localhost|127\.0\.0\.1)/i"; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low, deployment_note Detects non-localhost gatewayUrl redirect; sid:9200810; rev:1;)
+alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - CVE-2026-25253 gatewayUrl Parameter Manipulation"; flow:to_server,established; http.uri; content:"gatewayUrl="; content:"ws"; distance:0; within:5; pcre:"/gatewayUrl=wss?:\/\/(?!localhost|127\.0\.0\.1)/i"; classtype:attempted-admin; priority:1; metadata:tier exploit, affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low, deployment_note Detects non-localhost gatewayUrl redirect; sid:9200810; rev:1;)
 
 # --- Token Exfiltration: Auth Token in WebSocket Hello Message to External ---
 # The stolen token is sent to an external server: {"type":"hello","auth":{"token":"..."}}
-alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenClaw Auth Token Exfiltration (hello+token)"; flow:established,to_server; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; content:"|22|auth|22|"; distance:0; within:30; content:"|22|token|22|"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1528, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; sid:9200811; rev:1;)
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenClaw Auth Token Exfiltration (hello+token)"; flow:established,to_server; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; content:"|22|auth|22|"; distance:0; within:30; content:"|22|token|22|"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:tier exploit, affected_product OpenClaw, mitre_attack T1528, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; sid:9200811; rev:1;)
 
 # --- Token Leak: sk- Prefix Token to External (API Key Pattern) ---
 # OpenClaw/Anthropic/OpenAI API key format: sk-...
-alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC WSATTACK - API Key Token Leak to External (sk- prefix)"; flow:established,to_server; content:"|22|token|22|"; content:"|22|sk-"; distance:0; within:15; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1528, signature_severity Critical, false_positive Very_Low; sid:9200812; rev:1;)
+alert tcp $HOME_NET any -> $EXTERNAL_NET !$HTTP_PORTS (msg:"CGTI-OC WSATTACK - API Key Token Leak to External (sk- prefix)"; flow:established,to_server; content:"|22|token|22|"; content:"|22|sk-"; distance:0; within:15; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1528, signature_severity Critical, false_positive Very_Low; sid:9200812; rev:1;)
 
 # --- WebSocket Handshake to Attacker Server (Non-Local ws://) ---
 # Opening a WebSocket connection to attacker.com via the browser
 # In normal OpenClaw usage, WebSocket connections are only opened to localhost
-alert http $HOME_NET any -> $EXTERNAL_NET !18789 (msg:"CGTI-OC WSATTACK - WebSocket Upgrade to Non-OpenClaw External Server"; flow:to_server,established; http.method; content:"GET"; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:"openclaw"; nocase; classtype:trojan-activity; priority:2; metadata:affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Major, false_positive Low; sid:9200813; rev:1;)
+alert http $HOME_NET any -> $EXTERNAL_NET !18789 (msg:"CGTI-OC WSATTACK - WebSocket Upgrade to Non-OpenClaw External Server"; flow:to_server,established; http.method; content:"GET"; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:"openclaw"; nocase; classtype:trojan-activity; priority:2; metadata:tier exploit, affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Major, false_positive Low; sid:9200813; rev:1;)
 
 
 # ============================================================================
@@ -130,18 +130,18 @@ alert http $HOME_NET any -> $EXTERNAL_NET !18789 (msg:"CGTI-OC WSATTACK - WebSoc
 
 # --- Rapid WebSocket Authentication Attempts to Gateway ---
 # A large number of WebSocket connection attempts per second = brute-force
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - ClawJacked Rapid WebSocket Auth Attempts (Brute-Force)"; flow:to_server; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; threshold:type both, track by_src, count 10, seconds 5; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1110.001, signature_severity Critical, false_positive Very_Low, deployment_note 10+ hello messages in 5s is definitive brute-force; reference:url,oasis.security/blog/openclaw-vulnerability; sid:9200820; rev:1;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202910) alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - ClawJacked Rapid WebSocket Auth Attempts (Brute-Force)"; flow:to_server; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; threshold:type both, track by_src, count 10, seconds 5; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1110.001, signature_severity Critical, false_positive Very_Low, deployment_note 10+ hello messages in 5s is definitive brute-force; reference:url,oasis.security/blog/openclaw-vulnerability; sid:9200820; rev:1;)
 
 # --- Rapid TCP Connection Attempts to Port 18789 ---
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Rapid TCP Connections to Gateway Port (Possible Brute-Force)"; flow:to_server; flags:S; threshold:type both, track by_src, count 30, seconds 10; classtype:attempted-admin; priority:2; metadata:affected_product OpenClaw, mitre_attack T1110, signature_severity Major, false_positive Low; sid:9200821; rev:2;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Rapid TCP Connections to Gateway Port (Possible Brute-Force)"; flow:to_server; flags:S; threshold:type both, track by_src, count 30, seconds 10; classtype:attempted-admin; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1110, signature_severity Major, false_positive Low; sid:9200821; rev:2;)
 
 # --- Failed Auth Response Pattern ---
 # When the gateway returns an auth error: {"type":"error","code":"auth_failed"}
-alert tcp any 18789 -> any any (msg:"CGTI-OC WSATTACK - Gateway Auth Failed Response (Multiple)"; flow:established,to_client; content:"|22|type|22|"; content:"|22|error|22|"; distance:0; within:20; content:"auth"; distance:0; within:30; threshold:type both, track by_dst, count 5, seconds 10; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1110.001, signature_severity Critical, false_positive Very_Low; sid:9200822; rev:1;)
+alert tcp any 18789 -> any any (msg:"CGTI-OC WSATTACK - Gateway Auth Failed Response (Multiple)"; flow:established,to_client; content:"|22|type|22|"; content:"|22|error|22|"; distance:0; within:20; content:"auth"; distance:0; within:30; flowbits:set,openclaw.auth.failed; threshold:type both, track by_dst, count 5, seconds 10; classtype:attempted-admin; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1110.001, signature_severity Critical, false_positive Very_Low; sid:9200822; rev:2;)
 
 # --- Successful Auth After Multiple Failures (Brute-Force Success) ---
 # This is a flowbit-based correlation rule
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Gateway Auth Attempt Tracking (Set Flowbit)"; flow:to_server,established; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; flowbits:set,openclaw.auth.attempt; flowbits:noalert; classtype:attempted-admin; sid:9200823; rev:1;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Gateway Auth Retry After Failure (Same Flow) - Brute-Force Indicator"; flow:to_server,established; content:"|22|type|22|"; content:"|22|hello|22|"; distance:0; within:20; flowbits:isset,openclaw.auth.failed; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1110.001, signature_severity Critical, false_positive Very_Low; sid:9200823; rev:2;)
 
 
 # ============================================================================
@@ -154,22 +154,22 @@ alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Gateway Auth Attempt Tra
 
 # --- Sandbox Disable: exec.approvals.set off ---
 # Attacker disables user approval prompts
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Sandbox Disable Command (exec.approvals off)"; flow:to_server,established; content:"exec.approvals"; content:"off"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1562.001, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low, deployment_note This command disables all safety prompts; sid:9200830; rev:1;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202902) alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Sandbox Disable Command (exec.approvals off)"; flow:to_server,established; content:"exec.approvals"; content:"off"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1562.001, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low, deployment_note This command disables all safety prompts; sid:9200830; rev:1;)
 
 # --- Docker Escape: tools.exec.host gateway ---
 # Attacker forces an escape from the Docker sandbox
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Docker Escape Command (tools.exec.host gateway)"; flow:to_server,established; content:"tools.exec.host"; content:"gateway"; distance:0; within:20; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1610, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; sid:9200831; rev:1;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202903) alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Docker Escape Command (tools.exec.host gateway)"; flow:to_server,established; content:"tools.exec.host"; content:"gateway"; distance:0; within:20; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1610, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; sid:9200831; rev:1;)
 
 # --- Arbitrary Command Execution: node.invoke system.run ---
 # Attacker executes arbitrary commands
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - RCE via node.invoke system.run"; flow:to_server,established; content:"node.invoke"; content:"system.run"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; sid:9200832; rev:1;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202904) alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - RCE via node.invoke system.run"; flow:to_server,established; content:"node.invoke"; content:"system.run"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, cve CVE-2026-25253, signature_severity Critical, false_positive Very_Low; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; sid:9200832; rev:1;)
 
 # --- Config Patch Command ---
 # Changing security settings via config.patch
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Config Patch via WebSocket"; flow:to_server,established; content:"config.patch"; content:"sandbox"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1562, signature_severity Critical, false_positive Low; sid:9200833; rev:1;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Config Patch via WebSocket"; flow:to_server,established; content:"config.patch"; content:"sandbox"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1562, signature_severity Critical, false_positive Low; sid:9200833; rev:1;)
 
 # --- Tool Policy Modification ---
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Tool Policy Modification via WebSocket"; flow:to_server,established; content:"config.patch"; content:"tool"; distance:0; within:20; content:"policy"; distance:0; within:20; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1562.001, signature_severity Critical, false_positive Low; sid:9200834; rev:1;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Tool Policy Modification via WebSocket"; flow:to_server,established; content:"config.patch"; content:"tool"; distance:0; within:20; content:"policy"; distance:0; within:20; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1562.001, signature_severity Critical, false_positive Low; sid:9200834; rev:1;)
 
 # --- Device Registration (ClawJacked: Auto-Approve) ---
 # Attacker registers as a trusted device
@@ -194,7 +194,7 @@ alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Tool Policy Modification
 
 # --- Agent Message Injection ---
 # Attacker directly sends a message to the AI agent
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Agent Message Injection via WebSocket"; flow:to_server,established; content:"chat.message"; content:"system.run"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200840; rev:1;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Agent Message Injection via WebSocket"; flow:to_server,established; content:"chat.message"; content:"system.run"; distance:0; within:200; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200840; rev:1;)
 
 
 # ============================================================================
@@ -206,12 +206,12 @@ alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Agent Message Injection 
 # ============================================================================
 
 # --- OpenClaw mDNS Service Discovery ---
-alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - OpenClaw Gateway mDNS Service Discovery"; content:"_openclaw-gw"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200850; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202020) alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - OpenClaw Gateway mDNS Service Discovery"; content:"_openclaw-gw"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200850; rev:1;)
 
 # --- Legacy Moltbot/Clawdbot mDNS ---
-alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - Legacy Moltbot mDNS Service Discovery"; content:"_moltbot"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200851; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202021) alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - Legacy Moltbot mDNS Service Discovery"; content:"_moltbot"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200851; rev:1;)
 
-alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - Legacy Clawdbot mDNS Service Discovery"; content:"_clawdbot"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200852; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202022) alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - Legacy Clawdbot mDNS Service Discovery"; content:"_clawdbot"; nocase; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1046, signature_severity Major, false_positive Very_Low; sid:9200852; rev:1;)
 
 
 # ============================================================================
@@ -224,16 +224,16 @@ alert udp any any -> any 5353 (msg:"CGTI-OC WSATTACK - Legacy Clawdbot mDNS Serv
 # ============================================================================
 
 # --- Log Poisoning: Prompt Injection in WebSocket Message ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning Attempt (Ignore Previous Instructions)"; flow:to_server,established; content:"ignore previous"; nocase; content:"instruction"; nocase; distance:0; within:30; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, cve CVE-2026-25593, signature_severity Critical, false_positive Low; sid:9200860; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning Attempt (Ignore Previous Instructions)"; flow:to_server,established; content:"ignore previous"; nocase; content:"instruction"; nocase; distance:0; within:30; classtype:attempted-admin; priority:1; metadata:tier exploit, affected_product OpenClaw, mitre_attack T1059, cve CVE-2026-25593, signature_severity Critical, false_positive Low; sid:9200860; rev:1;)
 
 # --- Log Poisoning: System Prompt Override ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning Attempt (System Prompt Override)"; flow:to_server,established; content:"you are now"; nocase; content:"new instruction"; nocase; distance:0; within:50; classtype:attempted-admin; priority:2; metadata:affected_product OpenClaw, mitre_attack T1059, signature_severity Major, false_positive Low; sid:9200861; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning Attempt (System Prompt Override)"; flow:to_server,established; content:"you are now"; nocase; content:"new instruction"; nocase; distance:0; within:50; classtype:attempted-admin; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1059, signature_severity Major, false_positive Low; sid:9200861; rev:1;)
 
 # --- Log Poisoning: Embedded Shell Command ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning with Embedded Shell Command"; flow:to_server,established; content:"/bin/sh"; content:"-c"; distance:0; within:5; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200862; rev:2;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202961) alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning with Embedded Shell Command"; flow:to_server,established; content:"/bin/sh"; content:"-c"; distance:0; within:5; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200862; rev:2;)
 
 # --- Log Poisoning: curl/wget Command Injection ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning with curl Command"; flow:to_server,established; content:"curl "; content:"http"; distance:0; within:10; content:"|7c|"; distance:0; within:50; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200863; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Poisoning with curl Command"; flow:to_server,established; content:"curl "; content:"http"; distance:0; within:10; content:"|7c|"; distance:0; within:50; classtype:attempted-admin; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9200863; rev:1;)
 
 
 # ============================================================================
@@ -245,11 +245,11 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Log Pois
 
 # --- No Auth Header in Gateway WebSocket Request ---
 # WebSocket upgrade without Authorization header
-alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Unauthenticated WebSocket Upgrade to Gateway"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:!"Authorization"; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Low, deployment_note Gateway should always require auth; sid:9200870; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202010) alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Unauthenticated WebSocket Upgrade to Gateway"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:!"Authorization"; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1190, signature_severity Critical, false_positive Low, deployment_note Gateway should always require auth; sid:9200870; rev:1;)
 
 # --- Guest Mode Tool Invocation ---
 # Tool execution in Guest mode (privilege escalation)
-alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Guest Mode Tool Invocation (Privilege Escalation)"; flow:to_server,established; content:"Guest"; content:"tool.invoke"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1078.001, signature_severity Critical, false_positive Low; sid:9200871; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202011) alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Guest Mode Tool Invocation (Privilege Escalation)"; flow:to_server,established; content:"Guest"; content:"tool.invoke"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1078.001, signature_severity Critical, false_positive Low; sid:9200871; rev:1;)
 
 # --- Python REPL Access via Gateway ---
 # DISABLED-FP: Python REPL is a core OpenClaw feature
@@ -264,22 +264,22 @@ alert tcp any any -> any 18789 (msg:"CGTI-OC WSATTACK - Guest Mode Tool Invocati
 # ============================================================================
 
 # --- Shodan/Censys Scanner Fingerprint ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Shodan Scanner Probe on Gateway Port"; flow:to_server,established; content:"User-Agent:"; content:"Shodan"; distance:0; within:30; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9200880; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Shodan Scanner Probe on Gateway Port"; flow:to_server,established; content:"User-Agent:"; content:"Shodan"; distance:0; within:30; classtype:attempted-recon; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9200880; rev:1;)
 
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Censys Scanner Probe on Gateway Port"; flow:to_server,established; content:"User-Agent:"; content:"CensysInspect"; distance:0; within:30; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9200881; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Censys Scanner Probe on Gateway Port"; flow:to_server,established; content:"User-Agent:"; content:"CensysInspect"; distance:0; within:30; classtype:attempted-recon; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Very_Low; sid:9200881; rev:1;)
 
 # --- Nuclei Exploit Scanner ---
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Nuclei Vulnerability Scanner on Gateway"; flow:to_server,established; content:"User-Agent:"; content:"Nuclei"; distance:0; within:30; classtype:attempted-recon; priority:1; metadata:affected_product OpenClaw, mitre_attack T1595.002, signature_severity Critical, false_positive Very_Low; sid:9200882; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - Nuclei Vulnerability Scanner on Gateway"; flow:to_server,established; content:"User-Agent:"; content:"Nuclei"; distance:0; within:30; classtype:attempted-recon; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1595.002, signature_severity Critical, false_positive Very_Low; sid:9200882; rev:1;)
 
 # --- Generic HTTP Probe on Gateway Port ---
 # HTTP GET / attempts on the gateway port (scanner detection)
-alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - HTTP Root Probe on Gateway Port"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/"; depth:1; threshold:type both, track by_src, count 3, seconds 60; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9200883; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - HTTP Root Probe on Gateway Port"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/"; depth:1; threshold:type both, track by_src, count 3, seconds 60; classtype:attempted-recon; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9200883; rev:1;)
 
 # --- /json Endpoint Probe (Node.js Debug Pattern) ---
-alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - /json Endpoint Probe on Gateway (Debug Fingerprint)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/json"; classtype:attempted-recon; priority:1; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Critical, false_positive Very_Low; sid:9200884; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202037) alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - /json Endpoint Probe on Gateway (Debug Fingerprint)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/json"; classtype:attempted-recon; priority:1; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Critical, false_positive Very_Low; sid:9200884; rev:1;)
 
 # --- API Endpoint Discovery ---
-alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - API Endpoint Discovery on Gateway (/api/)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/api/"; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9200885; rev:1;)
+#DUPE(kept: oc-gateway-exposure.rules sid:9202038) alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - API Endpoint Discovery on Gateway (/api/)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/api/"; classtype:attempted-recon; priority:2; metadata:affected_product OpenClaw, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9200885; rev:1;)
 
 
 # ============================================================================
@@ -290,10 +290,10 @@ alert http $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC WSATTACK - API End
 # ============================================================================
 
 # --- Non-Localhost Origin in WebSocket to Gateway ---
-alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - CSWSH Non-Localhost Origin in WebSocket Upgrade"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:"Origin:"; content:!"localhost"; content:!"127.0.0.1"; content:!"192.168."; content:!"10."; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Critical, false_positive Low, deployment_note Non-localhost non-LAN origin to gateway WebSocket is suspicious; sid:9200890; rev:2;)
+#DUPE(kept: oc-exploit-cve.rules sid:9202905) alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - CSWSH Non-Localhost Origin in WebSocket Upgrade"; flow:to_server,established; http.header; content:"Upgrade"; nocase; content:"websocket"; nocase; content:"Origin:"; content:!"localhost"; content:!"127.0.0.1"; content:!"192.168."; content:!"10."; classtype:attempted-admin; priority:1; metadata:affected_product OpenClaw, mitre_attack T1557, cve CVE-2026-25253, signature_severity Critical, false_positive Low, deployment_note Non-localhost non-LAN origin to gateway WebSocket is suspicious; sid:9200890; rev:2;)
 
 # --- Suspicious Referer in Gateway Request ---
-alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - Suspicious External Referer in Gateway Request"; flow:to_server,established; http.header; content:"Referer:"; content:"http"; distance:0; within:6; content:!"localhost"; content:!"127.0.0.1"; content:!"192.168."; content:!"10."; classtype:attempted-admin; priority:2; metadata:affected_product OpenClaw, mitre_attack T1557, signature_severity Major, false_positive Low; sid:9200891; rev:2;)
+alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - Suspicious External Referer in Gateway Request"; flow:to_server,established; http.header; content:"Referer:"; content:"http"; distance:0; within:6; content:!"localhost"; content:!"127.0.0.1"; content:!"192.168."; content:!"10."; classtype:attempted-admin; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1557, signature_severity Major, false_positive Low; sid:9200891; rev:2;)
 
 
 # ============================================================================
@@ -304,19 +304,19 @@ alert http any any -> any 18789 (msg:"CGTI-OC WSATTACK - Suspicious External Ref
 # ============================================================================
 
 # --- Gateway Config Export to External ---
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Gateway Config Data Sent to External"; flow:established,to_client; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200900; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Gateway Config Data Sent to External"; flow:established,to_client; content:"ANTHROPIC_API_KEY"; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200900; rev:1;)
 
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenAI API Key Leak from Gateway"; flow:established,to_client; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200901; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OpenAI API Key Leak from Gateway"; flow:established,to_client; content:"OPENAI_API_KEY"; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200901; rev:1;)
 
 # --- OAuth Token Leak ---
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OAuth Token Leak from Gateway Response"; flow:established,to_client; content:"oauth_token"; content:"access_token"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1528, signature_severity Critical, false_positive Low; sid:9200902; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - OAuth Token Leak from Gateway Response"; flow:established,to_client; content:"oauth_token"; content:"access_token"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1528, signature_severity Critical, false_positive Low; sid:9200902; rev:1;)
 
 # --- Messaging Platform Credentials Leak ---
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Messaging Platform Credentials Leak from Gateway"; flow:established,to_client; content:"TELEGRAM_BOT_TOKEN"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200903; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Messaging Platform Credentials Leak from Gateway"; flow:established,to_client; content:"TELEGRAM_BOT_TOKEN"; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200903; rev:1;)
 
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Discord Token Leak from Gateway"; flow:established,to_client; content:"DISCORD_TOKEN"; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200904; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - Discord Token Leak from Gateway"; flow:established,to_client; content:"DISCORD_TOKEN"; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200904; rev:1;)
 
-alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - WhatsApp Credentials Leak from Gateway"; flow:established,to_client; content:"WHATSAPP"; content:"SECRET"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200905; rev:1;)
+alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - WhatsApp Credentials Leak from Gateway"; flow:established,to_client; content:"WHATSAPP"; content:"SECRET"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9200905; rev:1;)
 
 
 # ============================================================================
@@ -336,11 +336,11 @@ alert tcp $HOME_NET 18789 -> $EXTERNAL_NET any (msg:"CGTI-OC WSATTACK - WhatsApp
 # --- Device Token Rotation Without Session Disconnect ---
 # device.token.rotate seen but NO subsequent disconnect/reconnect from same source.
 # This is the core CVE pattern: revocation without termination.
-alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 Token Rotation on Gateway (Monitor for Session Termination)"; flow:to_server,established; content:"device.token.rotate"; classtype:policy-violation; priority:2; metadata:cve CVE-2026-34503, mitre_attack T1078, signature_severity Major, false_positive Low, deployment_note Token rotation should be followed by session disconnect - correlate with session logs; sid:9200907; rev:1;)
+alert tcp any any -> any 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 Token Rotation on Gateway (Monitor for Session Termination)"; flow:to_server,established; content:"device.token.rotate"; classtype:policy-violation; priority:3; metadata:tier policy, cve CVE-2026-34503, mitre_attack T1078, signature_severity Major, false_positive Low, deployment_note Token rotation should be followed by session disconnect - correlate with session logs; sid:9200907; rev:2;)
 
 # --- External IP Performing Operations After Hello Without Re-Auth ---
 # WebSocket operations from EXTERNAL_NET on port 18789 without recent hello.
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 External WebSocket Session with config.patch (Potential Stale)"; flow:to_server,established; content:"config.patch"; classtype:attempted-admin; priority:1; metadata:cve CVE-2026-34503, mitre_attack T1078.004, signature_severity Critical, false_positive Low; sid:9200908; rev:1;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"CGTI-OC CVE - CVE-2026-34503 External WebSocket Session with config.patch (Potential Stale)"; flow:to_server,established; content:"config.patch"; classtype:attempted-admin; priority:1; metadata:tier exploit, cve CVE-2026-34503, mitre_attack T1078.004, signature_severity Critical, false_positive Low; sid:9200908; rev:1;)
 
 
 # ============================================================================

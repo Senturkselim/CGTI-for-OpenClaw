@@ -95,26 +95,26 @@
 # 1.1 TLS connection to primary AMOS C2 (91.92.242.30) — any port
 #     Used by all 335 ClawHavoc skills in the primary campaign.
 #     Source: Koi Security, Bitdefender, Snyk ToxicSkills, PolySwarm.
-alert tcp $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW TLS AMOS C2 - TLS ClientHello to Primary ClawHavoc C2 IP 91.92.242.30"; flow:to_server,established; content:"|16 03|"; depth:2; byte_test:1,>=,1,2; byte_test:1,<=,3,2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; threshold:type limit, track by_src, seconds 60, count 1; sid:9204400; rev:2; metadata:category amos-c2-tls, ip 91.92.242.30, created_at 2026_03_11;)
+alert tcp $HOME_NET any -> 91.92.242.30 any (msg:"OPENCLAW TLS AMOS C2 - TLS ClientHello to Primary ClawHavoc C2 IP 91.92.242.30"; flow:to_server,established; content:"|16 03|"; depth:2; byte_test:1,>=,1,2; byte_test:1,<=,3,2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; threshold:type limit, track by_src, seconds 60, count 1; sid:9204400; rev:2; metadata:tier ioc, category amos-c2-tls, ip 91.92.242.30, created_at 2026_03_11;)
 
 # 1.2 TLS connection to secondary C2 IPs (95.92.242.30 and 96.92.242.30)
 #     Source: adibirzu/openclaw-security-monitor c2-ips.txt.
-alert tcp $HOME_NET any -> [95.92.242.30,96.92.242.30] any (msg:"OPENCLAW TLS AMOS C2 - TLS ClientHello to Secondary ClawHavoc C2 IPs 95/96.92.242.30"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204401; rev:1; metadata:category amos-c2-tls, ip 95-96.92.242.30, created_at 2026_03_11;)
+alert tcp $HOME_NET any -> [95.92.242.30,96.92.242.30] any (msg:"OPENCLAW TLS AMOS C2 - TLS ClientHello to Secondary ClawHavoc C2 IPs 95/96.92.242.30"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204401; rev:1; metadata:tier ioc, category amos-c2-tls, ip 95-96.92.242.30, created_at 2026_03_11;)
 
 # 1.3 TLS connection to AuthTool backdoor endpoint (54.91.154.110)
 #     The "better-polymarket" skill embedded a reverse shell calling this IP.
 #     Port 13338 is the documented reverse shell listener port.
 #     Source: Koi Security, InsiderLLM kill chain analysis.
-alert tcp $HOME_NET any -> 54.91.154.110 any (msg:"OPENCLAW TLS AuthTool Backdoor - TLS Connection to Reverse Shell C2 54.91.154.110 (ClawHavoc)"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; threshold:type limit, track by_src, seconds 60, count 1; sid:9204402; rev:1; metadata:category amos-c2-tls, malware AuthTool-backdoor, ip 54.91.154.110, created_at 2026_03_11;)
+alert tcp $HOME_NET any -> 54.91.154.110 any (msg:"OPENCLAW TLS AuthTool Backdoor - TLS Connection to Reverse Shell C2 54.91.154.110 (ClawHavoc)"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; reference:url,insiderllm.com/guides/openclaw-clawhub-security-alert/; threshold:type limit, track by_src, seconds 60, count 1; sid:9204402; rev:1; metadata:tier ioc, category amos-c2-tls, malware AuthTool-backdoor, ip 54.91.154.110, created_at 2026_03_11;)
 
 # 1.4 TLS connection to payload staging IP (202.161.50.59)
 #     Source: adibirzu/openclaw-security-monitor c2-ips.txt.
-alert tcp $HOME_NET any -> 202.161.50.59 any (msg:"OPENCLAW TLS ClawHavoc C2 - TLS Connection to Payload Staging IP 202.161.50.59"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204403; rev:1; metadata:category amos-c2-tls, ip 202.161.50.59, created_at 2026_03_11;)
+alert tcp $HOME_NET any -> 202.161.50.59 any (msg:"OPENCLAW TLS ClawHavoc C2 - TLS Connection to Payload Staging IP 202.161.50.59"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204403; rev:1; metadata:tier ioc, category amos-c2-tls, ip 202.161.50.59, created_at 2026_03_11;)
 
 # 1.5 TLS connections to confirmed C2 subnet 45.94.47.145/147/149
 #     Source: dtg.com — "Connections to known C2 IPs: 45.94.47.145, .147, .149"
 #     Source: adibirzu/openclaw-security-monitor c2-ips.txt.
-alert tcp $HOME_NET any -> [45.94.47.145,45.94.47.147,45.94.47.149] any (msg:"OPENCLAW TLS ClawHavoc C2 - TLS Connection to C2 Subnet 45.94.47.x"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; threshold:type limit, track by_src, seconds 60, count 1; sid:9204404; rev:1; metadata:category amos-c2-tls, ip 45.94.47.x, created_at 2026_03_11;)
+alert tcp $HOME_NET any -> [45.94.47.145,45.94.47.147,45.94.47.149] any (msg:"OPENCLAW TLS ClawHavoc C2 - TLS Connection to C2 Subnet 45.94.47.x"; flow:to_server,established; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; classtype:trojan-activity; priority:1; reference:url,www.dtg.com/post/cve-2026-25253-openclaw-rce-and-moltbook-database-exposure; threshold:type limit, track by_src, seconds 60, count 1; sid:9204404; rev:1; metadata:tier ioc, category amos-c2-tls, ip 45.94.47.x, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 2: AMOS HTTPS EXFILTRATION ENDPOINTS — TLS SNI MATCHING
@@ -135,16 +135,16 @@ alert tcp $HOME_NET any -> [45.94.47.145,45.94.47.147,45.94.47.149] any (msg:"OP
 #             "exfiltrating high-value assets to
 #              hxxps://socifiapp[.]com/api/reports/upload"
 #     Source: Fleet.io osquery detection patterns for OpenClaw.
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS AMOS Exfil - TLS SNI socifiapp.com (AMOS Credential Upload Endpoint)"; flow:established,to_server; tls.sni; content:"socifiapp.com"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; reference:url,fleetdm.com/guides/mitigation-assets-and-detection-patterns-for-ai-agents-like-openclaw; threshold:type limit, track by_src, seconds 60, count 1; sid:9204405; rev:2; metadata:category amos-exfil-tls, domain socifiapp.com, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS AMOS Exfil - TLS SNI socifiapp.com (AMOS Credential Upload Endpoint)"; flow:established,to_server; tls.sni; content:"socifiapp.com"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:url,businessinsights.bitdefender.com/technical-advisory-openclaw-exploitation-enterprise-networks; reference:url,fleetdm.com/guides/mitigation-assets-and-detection-patterns-for-ai-agents-like-openclaw; threshold:type limit, track by_src, seconds 60, count 1; sid:9204405; rev:2; metadata:tier ioc, category amos-exfil-tls, domain socifiapp.com, created_at 2026_03_11;)
 
 # 2.2 TLS SNI install.app-distribution.net — AMOS installer staging
 #     Source: adibirzu/openclaw-security-monitor malicious-domains.txt —
 #             "install.app-distribution.net — Payload — AMOS installer distribution"
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS AMOS Payload - TLS SNI install.app-distribution.net (AMOS Installer Staging)"; flow:established,to_server; tls.sni; content:"install.app-distribution.net"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204406; rev:1; metadata:category amos-payload-tls, domain install.app-distribution.net, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS AMOS Payload - TLS SNI install.app-distribution.net (AMOS Installer Staging)"; flow:established,to_server; tls.sni; content:"install.app-distribution.net"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204406; rev:1; metadata:tier ioc, category amos-payload-tls, domain install.app-distribution.net, created_at 2026_03_11;)
 
 # 2.3 TLS SNI openclawdir.com — Fake ClawHub registry (CVE-2026-25253 PoC)
 #     Source: Previous threat research; adibirzu IoC database.
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Fake Registry - TLS SNI openclawdir.com (CVE-2026-25253 PoC Fake Skill Registry)"; flow:established,to_server; tls.sni; content:"openclawdir.com"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204407; rev:1; metadata:category supply-chain-tls, domain openclawdir.com, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Fake Registry - TLS SNI openclawdir.com (CVE-2026-25253 PoC Fake Skill Registry)"; flow:established,to_server; tls.sni; content:"openclawdir.com"; nocase; isdataat:!1,relative; fast_pattern; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204407; rev:1; metadata:tier exploit, category supply-chain-tls, domain openclawdir.com, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 3: CVE-2026-25253 TLS TOKEN EXFIL — WSS:// TO ATTACKER SERVER
@@ -176,7 +176,7 @@ alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Fake Registry - 
 #     Hunt.io analysis showed attackers use self-signed certs with revealing CNs.
 #     Source: Hunt.io certificate analysis; Hackers-Arise PoC write-up;
 #             DepthFirst disclosure notes.
-alert tls any any -> $HOME_NET any (msg:"OPENCLAW TLS CVE-2026-25253 - Inbound TLS Cert CN Contains Token Exfil Indicator"; flow:established,to_client; tls.cert_subject; pcre:"/CN=(attacker|exfil|token.?steal|claw.?exfil|openclaw.?steal|gateway.?steal)/i"; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; threshold:type limit, track by_src, seconds 60, count 1; sid:9204408; rev:2; metadata:category cve-2026-25253-tls, cve CVE-2026-25253, created_at 2026_03_11;)
+alert tls any any -> $HOME_NET any (msg:"OPENCLAW TLS CVE-2026-25253 - Inbound TLS Cert CN Contains Token Exfil Indicator"; flow:established,to_client; tls.cert_subject; pcre:"/CN=(attacker|exfil|token.?steal|claw.?exfil|openclaw.?steal|gateway.?steal)/i"; classtype:trojan-activity; priority:1; reference:cve,2026-25253; reference:url,hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure; reference:url,depthfirst.com/post/1-click-rce-to-steal-your-moltbot-data-and-keys; threshold:type limit, track by_src, seconds 60, count 1; sid:9204408; rev:2; metadata:tier exploit, category cve-2026-25253-tls, cve CVE-2026-25253, created_at 2026_03_11;)
 
 # 3.2 Hunt.io finding — exposed OpenClaw gateway running TLS with self-signed
 #     certificate whose Subject CN contains "OpenClaw", "Clawdbot", or "Moltbot".
@@ -185,7 +185,7 @@ alert tls any any -> $HOME_NET any (msg:"OPENCLAW TLS CVE-2026-25253 - Inbound T
 #     An external attacker connecting to these instances and receiving such a cert
 #     has discovered an exposed, likely-vulnerable OpenClaw instance.
 #     Source: Hunt.io certificate analysis report (CVE-2026-25253 exposure hunting).
-alert tls any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Exposed - Inbound TLS to Port 18789 with OpenClaw/Clawdbot/Moltbot Cert Subject"; flow:established,to_client; tls.cert_subject; pcre:"/CN=(OpenClaw|Clawdbot|Moltbot|openclaw|clawdbot|moltbot)/"; classtype:policy-violation; priority:2; reference:url,hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure; reference:cve,2026-25253; threshold:type limit, track by_src, seconds 300, count 1; sid:9204409; rev:2; metadata:category gateway-exposure-tls, cve CVE-2026-25253, created_at 2026_03_11;)
+alert tls any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Exposed - Inbound TLS to Port 18789 with OpenClaw/Clawdbot/Moltbot Cert Subject"; flow:established,to_client; tls.cert_subject; pcre:"/CN=(OpenClaw|Clawdbot|Moltbot|openclaw|clawdbot|moltbot)/"; classtype:policy-violation; priority:3; reference:url,hunt.io/blog/cve-2026-25253-openclaw-ai-agent-exposure; reference:cve,2026-25253; threshold:type limit, track by_src, seconds 300, count 1; sid:9204409; rev:3; metadata:tier policy, category gateway-exposure-tls, cve CVE-2026-25253, created_at 2026_03_11;)
 
 # 3.3 External TLS ClientHello to port 18789 — gateway should never accept
 #     external TLS connections in a properly secured deployment.
@@ -193,7 +193,7 @@ alert tls any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Exposed - Inboun
 #     Conscia: "binding OpenClaw to 0.0.0.0:18789 by default"
 #     Any external TLS ClientHello to this port signals either misconfiguration
 #     or an active attempt to exploit an exposed instance.
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Exposed - External TLS ClientHello to OpenClaw Gateway Port 18789"; flow:to_server,established; content:"|16 03|"; depth:2; byte_test:1,>=,1,2; byte_test:1,<=,3,2; content:"|01|"; offset:5; depth:1; classtype:policy-violation; priority:1; reference:cve,2026-25253; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 60, count 1; sid:9204410; rev:2; metadata:category gateway-exposure-tls, cve CVE-2026-25253, created_at 2026_03_11;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Exposed - External TLS ClientHello to OpenClaw Gateway Port 18789"; flow:to_server,established; content:"|16 03|"; depth:2; byte_test:1,>=,1,2; byte_test:1,<=,3,2; content:"|01|"; offset:5; depth:1; classtype:policy-violation; priority:3; reference:cve,2026-25253; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 60, count 1; sid:9204410; rev:3; metadata:tier policy, category gateway-exposure-tls, cve CVE-2026-25253, created_at 2026_03_11;)
 
 # 3.4 ClawJacked TLS brute-force — high-rate TLS handshakes to port 18789
 #     Oasis Security (ClawJacked): "The script brute-forces the gateway password
@@ -201,7 +201,7 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW TLS Gateway Expose
 #     localhost connections entirely."
 #     Each brute-force attempt opens a new TLS handshake. This rule detects
 #     the volume pattern from any source.
-alert tcp any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS ClawJacked - High-Rate TLS Handshakes to Gateway Port 18789 (Brute-Force Attack)"; flow:to_server; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; threshold:type both, track by_src, count 20, seconds 10; classtype:attempted-admin; priority:1; reference:url,www.oasis.security/blog/openclaw-vulnerability; sid:9204411; rev:2; metadata:category clawjacked-tls, attack ClawJacked, created_at 2026_03_11;)
+alert tcp any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS ClawJacked - High-Rate TLS Handshakes to Gateway Port 18789 (Brute-Force Attack)"; flow:to_server; content:"|16 03|"; depth:2; content:"|01|"; offset:5; depth:1; threshold:type both, track by_src, count 20, seconds 10; classtype:attempted-admin; priority:1; reference:url,www.oasis.security/blog/openclaw-vulnerability; sid:9204411; rev:2; metadata:tier behavioral, category clawjacked-tls, attack ClawJacked, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 4: API.ANTHROPIC.COM TLS CERTIFICATE ANOMALIES
@@ -227,21 +227,23 @@ alert tcp any any -> $HOME_NET 18789 (msg:"OPENCLAW TLS ClawJacked - High-Rate T
 #     specific SNI is a MITM proxy or DNS-poisoned route to a fake server.
 #     Source: Conscia security analysis; adversa.ai hardening guide;
 #             Dvuln researcher Jamieson O'Reilly Anthropic key exposure demo.
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS MITM - api.anthropic.com Certificate Not Issued by DigiCert (ANTHROPIC_API_KEY Theft Risk)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; nocase; isdataat:!1,relative; tls.cert_issuer; pcre:"/^(?!.*DigiCert).*$/si"; fast_pattern; classtype:trojan-activity; priority:1; reference:url,conscia.com/blog/the-openclaw-security-crisis/; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204412; rev:2; metadata:category anthropic-api-mitm, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS MITM - api.anthropic.com Certificate Not Issued by DigiCert (ANTHROPIC_API_KEY Theft Risk)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; nocase; isdataat:!1,relative; tls.cert_issuer; pcre:"/^(?!.*DigiCert).*$/si"; fast_pattern; classtype:trojan-activity; priority:1; reference:url,conscia.com/blog/the-openclaw-security-crisis/; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204412; rev:2; metadata:tier ioc, category anthropic-api-mitm, created_at 2026_03_11;)
 
 # 4.2 api.anthropic.com with expired TLS certificate — MITM infrastructure failure
 #     Attackers setting up a fake api.anthropic.com endpoint may deploy an
 #     expired certificate when their infrastructure is hastily provisioned.
 #     Source: Active Countermeasures C2 hunting methodology —
 #             "expired certificates are a common indicator of attacker infrastructure"
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Expired Cert - api.anthropic.com Expired Certificate (Possible MITM Infrastructure)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; nocase; isdataat:!1,relative; tls_cert_expired; fast_pattern; classtype:trojan-activity; priority:1; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204413; rev:1; metadata:category anthropic-api-mitm, created_at 2026_03_11;)
+# NOTE(v-fix): SID 9204413 split into setter (SNI, to_server) + checker (cert_expired, to_client, SID 9204422) — Suricata rejects mixing to_server SNI with to_client cert keywords in one rule.
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Setter - api.anthropic.com SNI Seen (MITM Check Chain)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; isdataat:!1,relative; flowbits:set,openclaw.tls.anthropic_sni; flowbits:noalert; classtype:not-suspicious; priority:3; sid:9204413; rev:2; metadata:tier ioc, category anthropic-api-mitm, created_at 2026_03_11;)
+alert tls $EXTERNAL_NET 443 -> $HOME_NET any (msg:"OPENCLAW TLS Expired Cert - api.anthropic.com Expired Certificate (Possible MITM Infrastructure)"; flow:established,to_client; flowbits:isset,openclaw.tls.anthropic_sni; tls_cert_expired; classtype:trojan-activity; priority:1; reference:url,conscia.com/blog/the-openclaw-security-crisis/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204422; rev:1; metadata:tier behavioral, category anthropic-api-mitm, created_at 2026_03_11;)
 
 # 4.3 api.anthropic.com self-signed certificate — Subject CN matches Issuer CN
 #     An attacker quickly generating a fake certificate for this hostname
 #     using OpenSSL defaults will produce a self-signed cert where
 #     Subject == Issuer. The legitimate Anthropic cert never exhibits this.
 #     Source: Active Countermeasures C2 hunting guide — self-signed cert detection.
-alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Self-Signed - api.anthropic.com Self-Signed Certificate (MITM Active)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; nocase; isdataat:!1,relative; tls.cert_subject; content:"CN=api.anthropic.com"; nocase; tls.cert_issuer; content:"CN=api.anthropic.com"; nocase; classtype:trojan-activity; priority:1; reference:url,isukant.medium.com/detecting-malicious-infrastructure-512f5039553d; threshold:type limit, track by_src, seconds 300, count 1; sid:9204414; rev:1; metadata:category anthropic-api-mitm, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Self-Signed - api.anthropic.com Self-Signed Certificate (MITM Active)"; flow:established,to_server; tls.sni; content:"api.anthropic.com"; nocase; isdataat:!1,relative; tls.cert_subject; content:"CN=api.anthropic.com"; nocase; tls.cert_issuer; content:"CN=api.anthropic.com"; nocase; classtype:trojan-activity; priority:1; reference:url,isukant.medium.com/detecting-malicious-infrastructure-512f5039553d; threshold:type limit, track by_src, seconds 300, count 1; sid:9204414; rev:1; metadata:tier ioc, category anthropic-api-mitm, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 5: OPENCLAW iOS / MACOS NODE TLS TOFU ATTACK
@@ -270,7 +272,7 @@ alert tls $HOME_NET any -> $EXTERNAL_NET 443 (msg:"OPENCLAW TLS Self-Signed - ap
 #     docs.openclaw.ai: "Optional: pin remote TLS with gateway.remote.tlsFingerprint
 #     when using wss://."
 #     DeepWiki: GatewayConnectionController.swift TrustPrompt on first connect.
-alert tls $HOME_NET any -> any 18789 (msg:"OPENCLAW TLS TOFU Risk - Self-Signed Certificate on wss://gateway:18789 (First-Connect TOFU Attack Vector)"; flow:established,to_server; tls.sni; pcre:"/^(?!localhost|127\.0\.0\.1)./"; tls.cert_subject; pcre:"/^CN=.+/"; tls.cert_issuer; pcre:"/^CN=.+/"; classtype:bad-unknown; priority:2; reference:url,deepwiki.com/openclaw/openclaw/6-tools-and-skills; reference:url,docs.openclaw.ai/gateway/security; threshold:type limit, track by_src, seconds 600, count 1; sid:9204415; rev:1; metadata:category tofu-attack-tls, created_at 2026_03_11;)
+alert tls $HOME_NET any -> any 18789 (msg:"OPENCLAW TLS TOFU Risk - Self-Signed Certificate on wss://gateway:18789 (First-Connect TOFU Attack Vector)"; flow:established,to_server; tls.sni; pcre:"/^(?!localhost|127\.0\.0\.1)./"; tls.cert_subject; pcre:"/^CN=.+/"; tls.cert_issuer; pcre:"/^CN=.+/"; classtype:bad-unknown; priority:2; reference:url,deepwiki.com/openclaw/openclaw/6-tools-and-skills; reference:url,docs.openclaw.ai/gateway/security; threshold:type limit, track by_src, seconds 600, count 1; sid:9204415; rev:1; metadata:tier behavioral, category tofu-attack-tls, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 6: VIDAR INFOSTEALER TLS — OPENCLAW IDENTITY FILE TARGETING
@@ -294,7 +296,7 @@ alert tls $HOME_NET any -> any 18789 (msg:"OPENCLAW TLS TOFU Risk - Self-Signed 
 #             abuse.ch SSLBL JA3 database (continuously updated).
 #     NOTE: This JA3 is Vidar-specific per SSLBL analysis of 25M+ PCAPs.
 #           False positive risk is very low; SSLBL confirms high confidence.
-alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS Vidar Infostealer - JA3 Fingerprint Match (Targeting OpenClaw Identity Files)"; flow:established,to_server; ja3.hash; content:"c50f6a8b9173676b47ba6085bd0c6cee"; fast_pattern; classtype:trojan-activity; priority:1; reference:url,sslbl.abuse.ch/ja3-fingerprints/; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204416; rev:2; metadata:category vidar-infostealer-tls, malware Vidar, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS Vidar Infostealer - JA3 Fingerprint Match (Targeting OpenClaw Identity Files)"; flow:established,to_server; ja3.hash; content:"c50f6a8b9173676b47ba6085bd0c6cee"; fast_pattern; classtype:trojan-activity; priority:1; reference:url,sslbl.abuse.ch/ja3-fingerprints/; reference:url,adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/; threshold:type limit, track by_src, seconds 300, count 1; sid:9204416; rev:2; metadata:tier behavioral, category vidar-infostealer-tls, malware Vidar, created_at 2026_03_11;)
 
 # 6.2 GhostSocks proxy malware TLS — distributed via malicious ClawHavoc skills
 #     adibirzu: "GhostSocks proxy malware" is listed alongside AMOS and Vidar
@@ -303,7 +305,7 @@ alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS Vidar Infosteale
 #     The certificate CN "GhostSocks" is the default cert generated by the
 #     GhostSocks framework when no custom certificate is specified.
 #     Source: adibirzu/openclaw-security-monitor (GhostSocks entry).
-alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS GhostSocks - Proxy Malware Default Certificate CN (Distributed via ClawHavoc Skills)"; flow:established,to_server; tls.cert_subject; pcre:"/CN=GhostSocks/i"; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204417; rev:1; metadata:category ghostsocks-tls, malware GhostSocks, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS GhostSocks - Proxy Malware Default Certificate CN (Distributed via ClawHavoc Skills)"; flow:established,to_server; tls.cert_subject; pcre:"/CN=GhostSocks/i"; classtype:trojan-activity; priority:1; reference:url,github.com/adibirzu/openclaw-security-monitor; threshold:type limit, track by_src, seconds 60, count 1; sid:9204417; rev:1; metadata:tier behavioral, category ghostsocks-tls, malware GhostSocks, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 7: PLAINTEXT WS:// TOKEN EXPOSURE ON NON-LOOPBACK INTERFACES
@@ -328,7 +330,7 @@ alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS GhostSocks - Pro
 #     token in plaintext. Suricata sees this traffic before encryption (there
 #     is no encryption in this case).
 #     Source: markaicode.com OpenClaw SSL guide; docs.openclaw.ai security page.
-alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW WS Plaintext - External WebSocket Upgrade to Gateway Port 18789 Without TLS (Token Sniffable)"; flow:to_server,established; content:"GET"; depth:3; content:"Upgrade|3a 20|websocket"; nocase; within:200; content:!"TLS"; content:!"wss"; classtype:policy-violation; priority:2; reference:url,markaicode.com/openclaw-ssl-setup-guide/; reference:url,docs.openclaw.ai/gateway/security; threshold:type limit, track by_src, seconds 60, count 1; sid:9204418; rev:2; metadata:category gateway-plaintext-ws, created_at 2026_03_11;)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW WS Plaintext - External WebSocket Upgrade to Gateway Port 18789 Without TLS (Token Sniffable)"; flow:to_server,established; content:"GET"; depth:3; content:"Upgrade|3a 20|websocket"; nocase; within:200; content:!"TLS"; content:!"wss"; classtype:policy-violation; priority:3; reference:url,markaicode.com/openclaw-ssl-setup-guide/; reference:url,docs.openclaw.ai/gateway/security; threshold:type limit, track by_src, seconds 60, count 1; sid:9204418; rev:3; metadata:tier policy, category gateway-plaintext-ws, created_at 2026_03_11;)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 8: CLAWHAVOC SKILL C2 — SELF-SIGNED CERT WITH ABUSED TLD
@@ -347,7 +349,7 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET 18789 (msg:"OPENCLAW WS Plaintext - Ext
 #              AND domain ends in known abuse TLD.
 #     ClawHavoc skills were documented using exactly this pattern for their
 #     C2 servers. Source: Koi Security, adibirzu IoC database.
-alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS ClawHavoc C2 - Self-Signed CDN/API Lookalike Certificate on Abused TLD"; flow:established,to_server; tls.cert_subject; pcre:"/CN=(cdn|api|srv|gate|static|assets)[0-9]{0,4}\.[a-z0-9]{3,12}\.(ru|su|xyz|top|cc|pw|tk)$/i"; tls.cert_issuer; pcre:"/CN=(cdn|api|srv|gate|static|assets)[0-9]{0,4}\.[a-z0-9]{3,12}\.(ru|su|xyz|top|cc|pw|tk)$/i"; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; threshold:type limit, track by_src, seconds 300, count 1; sid:9204419; rev:1; metadata:category clawhavoc-c2-tls, campaign ClawHavoc, created_at 2026_03_11;)
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS ClawHavoc C2 - Self-Signed CDN/API Lookalike Certificate on Abused TLD"; flow:established,to_server; tls.cert_subject; pcre:"/CN=(cdn|api|srv|gate|static|assets)[0-9]{0,4}\.[a-z0-9]{3,12}\.(ru|su|xyz|top|cc|pw|tk)$/i"; tls.cert_issuer; pcre:"/CN=(cdn|api|srv|gate|static|assets)[0-9]{0,4}\.[a-z0-9]{3,12}\.(ru|su|xyz|top|cc|pw|tk)$/i"; classtype:trojan-activity; priority:1; reference:url,www.koi.ai/blog/clawhavoc-341-malicious-clawedbot-skills-found-by-the-bot-they-were-targeting; threshold:type limit, track by_src, seconds 300, count 1; sid:9204419; rev:1; metadata:tier ioc, category clawhavoc-c2-tls, campaign ClawHavoc, created_at 2026_03_11;)
 
 
 #
@@ -392,8 +394,8 @@ alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"OPENCLAW TLS ClawHavoc C2 - S
 # --- Auth Token in URL Query String to Gateway ---
 # Catches ?token= or &token= in HTTP request URI to gateway port.
 # Auth tokens should be in headers, not URL parameters.
-alert http any any -> any 18789 (msg:"CGTI-OC CVE - GHSA-rchv Dashboard Token Leak in URL Parameter (macOS)"; flow:to_server,established; http.uri; pcre:"/[?&]token=[a-zA-Z0-9_-]{10,}/"; classtype:policy-violation; priority:1; metadata:ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Low, deployment_note Auth token in URL query string indicates vulnerable macOS Dashboard version; sid:9204420; rev:1;)
+alert http any any -> any 18789 (msg:"CGTI-OC CVE - GHSA-rchv Dashboard Token Leak in URL Parameter (macOS)"; flow:to_server,established; http.uri; pcre:"/[?&]token=[a-zA-Z0-9_-]{10,}/"; classtype:policy-violation; priority:3; metadata:tier policy, ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Low, deployment_note Auth token in URL query string indicates vulnerable macOS Dashboard version; sid:9204420; rev:2;)
 
 # --- Gateway Token in HTTP Referrer Header ---
 # Token leaked via Referrer when navigating away from Dashboard page.
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CVE - GHSA-rchv Gateway Token Leaked in Referrer Header"; flow:established,to_server; http.header; content:"Referer"; content:"token="; distance:0; within:50; content:"18789"; distance:0; within:100; classtype:policy-violation; priority:1; metadata:ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9204421; rev:1;)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC CVE - GHSA-rchv Gateway Token Leaked in Referrer Header"; flow:established,to_server; http.header; content:"Referer"; content:"token="; distance:0; within:50; content:"18789"; distance:0; within:100; classtype:policy-violation; priority:3; metadata:tier policy, ghsa GHSA-rchv-x836-w7xp, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9204421; rev:2;)
