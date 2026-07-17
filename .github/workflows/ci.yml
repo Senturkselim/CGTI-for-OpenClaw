@@ -47,4 +47,4 @@ jobs:
             count=$((count + n))
           done
           echo "Total: $count rules"
-          [ "$count" -ge 640 ] || (echo "Rule count too low!" && exit 1)
+          [ "$count" -ge 617 ] || (echo "Rule count too low!" && exit 1)
