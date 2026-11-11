@@ -5,8 +5,8 @@
 # Category 08: MCP Server Security
 # File: oc-mcp-security.rules
 # SID Range: 9202600 – 9202899
-# Version: 1.0
-# Date: 2026-03-07
+# Version: 1.1
+# Date: 2026-11-11
 # ============================================================================
 #
 # DESCRIPTION
@@ -21,6 +21,7 @@
 # - Malicious MCP server → credential theft, RCE, data exfiltration
 # - Confused deputy attacks (via proxy MCP server)
 # - Tool shadowing: malicious server overrides another server's tools
+# - Tool poisoning: hidden instructions inside tool descriptions
 # - OpenClaw MCP integration via the mcporter skill
 #
 # MCP Endpoints: /mcp, /sse, /messages (Streamable HTTP + SSE transport)
@@ -33,6 +34,93 @@
 # - Strobes: "MCP Critical Vulnerabilities"
 # - MCP Spec: modelcontextprotocol.io/specification
 # - Giskard: "OpenClaw + MCP attack patterns" (Feb 2026)
+# - Invariant Labs: "MCP Security Notification: Tool Poisoning Attacks"
+# - Oligo: "Critical RCE in Anthropic MCP Inspector" (CVE-2025-49596)
+# - JFrog: "mcp-remote command injection" (CVE-2025-6514)
+#
+# DEPLOYMENT NOTES
+# ----------------
+# 1. These rules inspect cleartext HTTP. Remote MCP normally runs over TLS,
+#    so place the sensor behind the TLS terminator (reverse proxy / gateway)
+#    or feed it decrypted traffic. Without that only 08G (DNS, TLS SNI)
+#    can see anything on an HTTPS connection.
+# 2. Rules marked "from external" depend on HOME_NET / EXTERNAL_NET being
+#    set correctly in suricata.yaml.
+# 3. Body inspection settings (suricata.yaml, app-layer.protocols.http.libhtp):
+#    - request-body-limit / response-body-limit (default 100kb): a tools/list
+#      result with many tools can be larger. Raise both, e.g. to 1mb.
+#    - response-body-minimal-inspect-size (default 32-40kb): a response body
+#      is not inspected until it reaches this size or the transaction ends.
+#      Ordinary JSON responses are unaffected, but on a long-lived SSE stream
+#      (GET /sse) the response rules fire when the client disconnects, not
+#      when the event is sent. Lower the value on sensors that watch MCP
+#      traffic; the smaller it is, the sooner the alert.
+# 4. Tested with Suricata 7.0.3: tests/test_mcp_rules.py replays one pcap per
+#    case and checks which SIDs fire (attack cases and benign look-alikes).
+#
+# MATCHING CONVENTIONS (v1.1)
+# ---------------------------
+# - JSON key order is not fixed, so contents that belong to different keys
+#   are matched independently instead of with distance/within chains.
+# - JSON allows "/" to be written as "\/" (PHP does this by default) or
+#   "\u002f". Method names are therefore matched as two parts:
+#       content:"|22|tools"; content:"call|22|"; distance:1; within:11;
+#   which accepts tools/call, tools\/call and tools\u002fcall.
+#   URLs accept both "//" and "\/\/". Paths accept "/", "\/" and "\\".
+# - \uXXXX escapes of ordinary letters in a method or tool name have no
+#   legitimate reason to exist and are reported by SID 9202618.
+# - Response rules are anchored to an MCP marker ("jsonrpc", "inputSchema")
+#   so that ordinary web pages do not trigger them.
+# - Exposure rules use threshold:type limit so that one alert per source
+#   per minute is raised instead of one alert per JSON-RPC message.
+#
+# CHANGELOG
+# ---------
+# 1.1 (2026-11-11)
+#   Fixed (false positives):
+#     9202600  matched any URI containing "/mcp" (e.g. /mcpanel)
+#     9202601  matched any URI containing "/sse" (e.g. /assets/sse-client.js)
+#     9202604  "Authorization" was case-sensitive: lowercase header names
+#              (node, HTTP/2) and X-API-Key auth were reported as unauthenticated
+#     9202621  fired on any response containing "tools" and "harvest"
+#     9202622  fired on any web page quoting "ignore previous instructions"
+#     9202623  fired on any web page containing "/bin/sh -c"
+#     9202624  fired on any web page containing a curl | sh one-liner
+#     9202640  fired on every normal session (3 POSTs to /mcp in 10 s)
+#     9202650  "sk-" matched task-, risk-, desk-, disk- ...
+#     9202652  fired on any JSON-RPC POST to an IP (e.g. Ethereum nodes)
+#   Fixed (missed detections):
+#     9202603, 9202611, 9202620  depended on JSON key order / a 50-100 byte window
+#     9202622  missed "ignore ALL previous instructions" and line-broken variants
+#     9202624  missed "curl -fsSL https://..." (http was 11 bytes after curl, limit 10)
+#     9202630  missed localhost, [::1], decimal/hex IPs, user@host, escaped slashes
+#     9202631  missed metadata.google.internal, ECS, Alibaba, encoded IPs
+#     9202650, 9202651  matched the raw stream, so gzip responses were invisible;
+#              9202651 also missed AWS_SECRET_ACCESS_KEY (upper case) and AKIA ids
+#     9202660  missed ngrok-free.app (hyphenated labels), trycloudflare.com, loca.lt
+#   Re-enabled with a narrower scope:
+#     9202610  shell tool invoked from external (exact tool-name match)
+#     9202614  tool call referencing credential files (was: every read_file)
+#     9202615  tool call referencing persistence / agent-config paths (was: every write_file)
+#   New:
+#     9202605  confirmed SSE exposure        9202616  reverse shell in arguments
+#     9202617  path traversal                9202618  \uXXXX-obfuscated method/tool
+#     9202619  download-and-execute          9202625-9202628  tool poisoning
+#     9202633  internal-origin SSRF (policy) 9202634  dangerous URL schemes
+#     9202654  secret sent to external MCP   9202655  private key in response
+#     9202663  tunnel agent in HOME_NET      9202664  tunnel via TLS SNI
+#     9202670  elicitation phishing          9202671  sampling request (policy)
+#     9202680  CVE-2025-49596                9202681  CVE-2025-6514
+#     9202682  cross-origin browser request (DNS rebinding / CSRF)
+#   Severity / scope changes:
+#     9202601  priority 1 -> 2 (request alone does not prove MCP; 9202605 does)
+#     9202621, 9202623, 9202624  priority 1 -> 2
+#     9202630  now external -> HOME_NET only; the same pattern coming from
+#              HOME_NET is 9202633 (priority 3), since agents fetching
+#              http://localhost:3000 are normal developer traffic
+#     9202650  response direction only; the request direction is 9202654
+#   Still disabled: 9202662 (see note in 08G)
+# 1.0 (2026-03-07)  Initial release
 # ============================================================================
 
 
@@ -43,20 +131,27 @@
 # ============================================================================
 
 # --- External Access to /mcp Endpoint ---
-
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Endpoint (/mcp)"; flow:to_server,established; http.uri; content:"/mcp"; http.method; content:"POST"; http.header; content:"application/json"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202600; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Endpoint (/mcp)"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/mcp"; pcre:"/\/mcp(\/|\?|$)/"; http.request_body; content:"|22|jsonrpc|22|"; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202600; rev:2;)
 
 # --- External Access to /sse Endpoint ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to SSE Endpoint (/sse)"; flow:to_server,established; http.uri; content:"/sse"; http.method; content:"GET"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202601; rev:1;)
+# Request only: any SSE application living at /sse looks the same, so this is priority 2.
+# SID 9202605 confirms that the server really is MCP.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to SSE Endpoint (/sse)"; flow:to_server,established; http.method; content:"GET"; http.uri; content:"/sse"; pcre:"/\/sse(\/|\?|$)/"; http.accept; content:"text/event-stream"; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1190, signature_severity Major, false_positive Medium; sid:9202601; rev:2;)
+
+# --- MCP SSE Server Answering an External Client (confirmed exposure) ---
+# The legacy SSE transport always opens with: event: endpoint / data: /messages?sessionId=...
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP SSE Endpoint Event Served to External Client (Confirmed Exposure)"; flow:established,to_client; http.response_body; content:"event|3a|"; content:"endpoint"; distance:0; within:10; pcre:"/event:\s*endpoint\s+data:\s*\S*session_?id=/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202605; rev:1;)
 
 # --- External Access to /messages Endpoint ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Messages Endpoint"; flow:to_server,established; http.uri; content:"/messages"; http.method; content:"POST"; http.request_body; content:"jsonrpc"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202602; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External Access to MCP Messages Endpoint"; flow:to_server,established; http.method; content:"POST"; http.uri; content:"/message"; pcre:"/\/messages?(\/|\?|$)/"; http.request_body; content:"|22|jsonrpc|22|"; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202602; rev:2;)
 
 # --- MCP Initialize Handshake from External ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Initialize Handshake from External Source"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"jsonrpc"; content:"initialize"; distance:0; within:50; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202603; rev:1;)
+# protocolVersion is mandatory in an MCP initialize request and separates it from other JSON-RPC dialects.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Initialize Handshake from External Source"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|initialize|22|"; content:"|22|jsonrpc|22|"; content:"protocolVersion"; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Very_Low; sid:9202603; rev:2;)
 
 # --- Unauthenticated MCP Request (No Auth Header) ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Unauthenticated MCP Request (No Authorization)"; flow:to_server,established; http.uri; content:"/mcp"; http.method; content:"POST"; http.header; content:!"Authorization"; http.request_body; content:"jsonrpc"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202604; rev:1;)
+# Neither an Authorization header nor an *api-key header is present. Header names are matched case-insensitively.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Unauthenticated MCP Request (No Authorization)"; flow:to_server,established; http.method; content:"POST"; http.uri; pcre:"/\/(mcp|messages?)(\/|\?|$)/"; http.header_names; content:!"|0d 0a|authorization|0d 0a|"; nocase; content:!"api-key|0d 0a|"; nocase; http.request_body; content:"|22|jsonrpc|22|"; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202604; rev:2;)
 
 
 # ============================================================================
@@ -65,26 +160,44 @@ alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Unauthenticate
 # Malicious tool calls: shell execution, file access, SSRF.
 # ============================================================================
 
-# --- MCP tools/call with Shell Execution ---
-# DISABLED-FP: exec matches legitimate MCP tools: execute_query, exec_sql, exec_command
-# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with Shell Command (tools/call + exec)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"exec"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202610; rev:1;)
+# --- External tools/call to a Shell / Command Execution Tool ---
+# v1.0 matched the substring "exec" and was disabled (execute_query, exec_sql ...).
+# v1.1 matches the complete tool name and only when the caller is external. Generic words
+# (command, process, script, code, python) only count together with a verb: run_command, start_process.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External MCP Tool Call to Shell/Command Execution Tool"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/\x22name\x22\s*:\s*\x22(?:exec|execute|eval|shell|bash|sh|zsh|cmd|terminal|powershell|pwsh|(?:exec|execute|run|start|spawn)[_.\-]?(?:shell|bash|sh|zsh|cmd|command|terminal|process|powershell|pwsh|script|python|code)(?:[_.\-]?(?:cmd|command|session|code|script))?|(?:shell|bash|sh|zsh|cmd|command|terminal|powershell|pwsh)[_.\-]?(?:exec|execute|run|cmd|command|session))\x22/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202610; rev:2;)
 
 # --- MCP tools/call with system.run ---
-alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call system.run (RCE via MCP)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"system.run"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9202611; rev:1;)
+alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call system.run (RCE via MCP)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; content:"system.run"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Very_Low; sid:9202611; rev:2;)
 
 # --- MCP tools/list Enumeration from External ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tools Enumeration from External (tools/list)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/list"; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202612; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tools Enumeration from External (tools/list)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"list|22|"; distance:1; within:11; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202612; rev:2;)
 
 # --- MCP resources/list Enumeration ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Resources Enumeration from External"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"resources/list"; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202613; rev:1;)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Resources Enumeration from External"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|resources"; content:"list|22|"; distance:1; within:11; threshold:type limit, track by_src, count 1, seconds 60; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1046, signature_severity Major, false_positive Low; sid:9202613; rev:2;)
 
-# --- MCP Tool Call with File Read ---
-# DISABLED-FP: read_file is a standard MCP filesystem tool — fires on every legitimate file read
-# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with File Read Operation"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"read_file"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1005, signature_severity Critical, false_positive Low; sid:9202614; rev:1;)
+# --- MCP Tool Call Referencing a Credential / Secret File ---
+# v1.0 matched the tool name read_file and was disabled. v1.1 looks at the path instead of the tool.
+alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call References Credential/Secret File"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|jsonrpc|22|"; pcre:"/\x22(tools|resources)(\/|\\\/|\\u002f)(call|read)\x22/i"; pcre:"/([\\\/]etc[\\\/]+(shadow|passwd|sudoers)|\.ssh[\\\/]+id_|\bid_(rsa|ed25519|ecdsa)\b|\.aws[\\\/]+credentials|\.kube[\\\/]+config|\.docker[\\\/]+config\.json|\.git-credentials|\.netrc\b|\.npmrc\b|\.pypirc\b|[\\\/]proc[\\\/]+self[\\\/]+environ|wallet\.dat|\.env(\.(local|prod|production))?\x22|\.openclaw[\\\/]+(credentials|openclaw\.json)|\.clawdbot[\\\/])/i"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Major, false_positive Medium; sid:9202614; rev:2;)
 
-# --- MCP Tool Call with File Write ---
-# DISABLED-FP: write_file is a standard MCP filesystem tool — fires on every legitimate file write
-# alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call with File Write Operation"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; content:"write_file"; distance:0; within:100; classtype:attempted-admin; priority:1; metadata:mitre_attack T1565.001, signature_severity Critical, false_positive Low; sid:9202615; rev:1;)
+# --- MCP Tool Call Referencing a Persistence / Agent Configuration Path ---
+# v1.0 matched the tool name write_file and was disabled. v1.1 looks at the path instead of the tool.
+alert http any any -> any any (msg:"CGTI-OC MCP - MCP Tool Call References Persistence/Agent Config Path"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|jsonrpc|22|"; pcre:"/\x22(tools|resources)(\/|\\\/|\\u002f)(call|read)\x22/i"; pcre:"/(authorized_keys|\.(bashrc|zshrc|bash_profile|zprofile)\b|[\\\/]etc[\\\/]+(cron|systemd[\\\/]+system|rc\.local|ld\.so\.preload)|\bcrontab\b|Launch(Agents|Daemons)[\\\/]|\.git[\\\/]+hooks[\\\/]|Start Menu[\\\/]+Programs[\\\/]+Startup|\.cursor[\\\/]+mcp\.json|\.vscode[\\\/]+mcp\.json|claude_desktop_config\.json|\.claude\.json|openclaw\.json)/i"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1546, signature_severity Major, false_positive Medium; sid:9202615; rev:2;)
+
+# --- Reverse Shell in MCP Tool Arguments ---
+alert http any any -> any any (msg:"CGTI-OC MCP - Reverse Shell Pattern in MCP Tool Arguments"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/([\\\/]dev[\\\/]+(tcp|udp)[\\\/]|\bn(c|cat|etcat)\b[^\x22]{0,60}\s-[a-z]*e\b|\bmkfifo\b|\bbash\s+-i\b|\bsocat\b[^\x22]{0,80}\bexec:)/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9202616; rev:1;)
+
+# --- Path Traversal in MCP Request from External ---
+# External only: coding agents legitimately use ../../ relative paths inside a project.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Path Traversal in MCP Request from External"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|jsonrpc|22|"; pcre:"/\x22(tools|resources)(\/|\\\/|\\u002f)(call|read)\x22/i"; pcre:"/(\.\.[\\\/]+){2,}|(%2e%2e|\.\.)(%2f|%5c)/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1083, signature_severity Critical, false_positive Low; sid:9202617; rev:1;)
+
+# --- Obfuscated JSON-RPC Method / Tool Name ---
+# Letters, digits and "- . / :" written as \u00XX inside "method" or "name". Encoders never do this on
+# their own (Go and .NET only escape < > & ' + and non-ASCII), so it indicates signature evasion.
+alert http any any -> any any (msg:"CGTI-OC MCP - Unicode-Escaped JSON-RPC Method or Tool Name (Signature Evasion)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|jsonrpc|22|"; content:"|5c|u00"; nocase; pcre:"/\x22(method|name)\x22\s*:\s*\x22[^\x22]*\\u00(2[def]|3[0-9a]|[46][1-9a-f]|[57][0-9a])/i"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1027, signature_severity Major, false_positive Very_Low; sid:9202618; rev:1;)
+
+# --- Download-and-Execute in MCP Tool Arguments ---
+# Also what a user asking "install bun for me" produces, hence priority 2.
+alert http any any -> any any (msg:"CGTI-OC MCP - Download-and-Execute Command in MCP Tool Arguments"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/(\b(curl|wget)\b[^|]{1,200}\|\s*(sudo\s+)?(ba|z|da)?sh\b|\bbase64\s+(-d|--decode)\b[^|]{0,60}\|\s*(sudo\s+)?(ba|z|da)?sh\b|powershell[^\x22]{0,60}\s-e(nc|ncodedcommand)?\s|downloadstring\s*\(|\bcertutil\b[^\x22]{0,40}-urlcache)/i"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1105, signature_severity Major, false_positive Medium; sid:9202619; rev:1;)
 
 
 # ============================================================================
@@ -92,23 +205,43 @@ alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Resources 
 # ============================================================================
 # OpenClaw agent connecting to a malicious MCP server.
 # A malicious MCP server can perform credential theft and prompt injection.
+# Tool-definition rules key on "inputSchema", which every tools/list result carries.
 # ============================================================================
 
 # --- OpenClaw Connecting to External MCP Server on Bare IP ---
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - Agent Connecting to MCP Server on Bare IP"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; http.request_body; content:"jsonrpc"; content:"initialize"; distance:0; within:50; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1102, signature_severity Critical, false_positive Low; sid:9202620; rev:1;)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - Agent Connecting to MCP Server on Bare IP"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/"; http.request_body; content:"|22|initialize|22|"; content:"|22|jsonrpc|22|"; content:"protocolVersion"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1102, signature_severity Critical, false_positive Low; sid:9202620; rev:2;)
 
-# --- MCP Server Returning Credential Harvest Tool ---
-# A malicious MCP server returns a credential-stealing function in its tool definition
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Server Offering Suspicious Tool (steal/harvest)"; flow:established,to_client; http.response_body; content:"tools"; pcre:"/(steal|harvest|exfil|keylog)/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1552, signature_severity Critical, false_positive Low; sid:9202621; rev:1;)
+# --- MCP Server Offering a Tool with a Malicious-Looking Name ---
+# Bare "harvest" was removed: Harvest (time tracking) ships tools named harvest_*.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Server Offering Suspicious Tool (steal/exfil/keylog)"; flow:established,to_client; http.response_body; content:"|22|inputSchema|22|"; pcre:"/\x22name\x22\s*:\s*\x22[^\x22]{0,40}(steal|exfil|keylog|backdoor|reverse[_\-]?shell|(harvest|dump|grab)[_\-]?(cred|pass|token|key|secret|cookie))/i"; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1552, signature_severity Major, false_positive Low; sid:9202621; rev:2;)
 
-# --- MCP Server Response with Hidden Prompt Injection ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Response Contains Prompt Injection Pattern"; flow:established,to_client; http.response_body; content:"ignore previous"; nocase; content:"instruction"; nocase; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202622; rev:1;)
+# --- MCP Response with Prompt Injection ---
+# Whitespace between words may be real or a JSON-escaped \n \r \t.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Response Contains Prompt Injection Pattern"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/(ignore|disregard|forget|override)(\s|\\[nrt])+((all|any|the|your|every)(\s|\\[nrt])+)?(previous|prior|above|earlier|preceding|system)(\s|\\[nrt])+(instructions?|prompts?|rules|directives|guidelines|context|messages)|you(\s|\\[nrt])+are(\s|\\[nrt])+now(\s|\\[nrt])+(in(\s|\\[nrt])+)?(developer|dan|unrestricted|jailbreak|god)(\s|\\[nrt])+mode/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Medium; sid:9202622; rev:2;)
 
-# --- MCP Tool Response Requesting Shell Execution ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Requesting Shell Execution"; flow:established,to_client; http.response_body; content:"/bin/sh"; content:"-c"; distance:0; within:5; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202623; rev:2;)
+# --- MCP Response Requesting Shell Execution ---
+# Documentation servers return shell snippets legitimately, hence priority 2.
+# The same pattern inside a tool definition is SID 9202628 (priority 1).
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Requesting Shell Execution"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/([\\\/]bin[\\\/]+(ba|z|da)?sh|\bcmd(\.exe)?|\bpowershell(\.exe)?|\bpwsh)\s+(-c|\\?\/c|-enc|-encodedcommand|-command)\s/i"; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1059, signature_severity Major, false_positive Medium; sid:9202623; rev:3;)
 
-# --- MCP Tool Response with curl Command ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Contains curl Download Command"; flow:established,to_client; http.response_body; content:"curl"; content:"http"; distance:0; within:10; content:"|7c|"; distance:0; within:100; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9202624; rev:1;)
+# --- MCP Response with curl/wget Piped to a Shell ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Response Contains curl Download Command"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/\b(curl|wget)\b[^|]{1,200}\|\s*(sudo\s+)?(ba|z|da)?sh\b/i"; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1059.004, signature_severity Major, false_positive Medium; sid:9202624; rev:2;)
+
+# --- Tool Poisoning: Hidden Instructions in a Tool Definition ---
+# <IMPORTANT>-style tags and "do not tell the user" phrasing (Invariant Labs). < > may arrive as \u003c \u003e (Go encoders).
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Tool Poisoning: Hidden Instructions in Tool Definition"; flow:established,to_client; http.response_body; content:"|22|inputSchema|22|"; pcre:"/(<|\\u003c)\/?(IMPORTANT|SYSTEM|CRITICAL|SECRET|HIDDEN|INSTRUCTIONS?|ATTENTION)(>|\\u003e)|(do(\s|\\[nrt])+not|don'?t|never)(\s|\\[nrt])+(mention|tell|inform|reveal|notify|show|disclose)[^.\x22]{0,60}\b(user|human|anyone)\b|without(\s|\\[nrt])+(telling|informing|notifying|asking|alerting)(\s|\\[nrt])+the(\s|\\[nrt])+user/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059, signature_severity Critical, false_positive Low; sid:9202625; rev:1;)
+
+# --- Tool Poisoning: Tool Definition Referencing Credential Files ---
+# SSH helper servers may document a default key path (~/.ssh/id_rsa), hence priority 2.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Tool Definition References Credential or Agent Config File"; flow:established,to_client; http.response_body; content:"|22|inputSchema|22|"; pcre:"/(\.ssh[\\\/]+(id_|authorized_keys)|\bid_(rsa|ed25519|ecdsa)\b|\.aws[\\\/]+credentials|\.kube[\\\/]+config|\.git-credentials|\.netrc\b|\.cursor[\\\/]+mcp\.json|claude_desktop_config\.json|openclaw\.json|[\\\/]etc[\\\/]+(shadow|passwd))/i"; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Major, false_positive Medium; sid:9202626; rev:1;)
+
+# --- Invisible Unicode in an MCP Response (ASCII smuggling) ---
+# 10+ consecutive Unicode Tag characters (U+E0000 block) or 12+ zero-width characters, raw UTF-8 or \u-escaped.
+# Emoji flags use at most 6 tag characters; ZWJ emoji never chain zero-width characters back to back.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Invisible Unicode Sequence in MCP Response (ASCII Smuggling)"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/(\xF3\xA0[\x80\x81][\x80-\xBF]){10,}|(\\udb40\\ud[c-f][0-9a-f]{2}){10,}|(\xE2\x80[\x8B-\x8D]|\xE2\x81\xA0|\xEF\xBB\xBF){12,}|(\\u(200[b-d]|2060|feff)){12,}/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1027, signature_severity Critical, false_positive Very_Low; sid:9202627; rev:1;)
+
+# --- Tool Poisoning: Shell / Download Command in a Tool Definition ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Tool Definition Contains Shell or Download-Execute Command"; flow:established,to_client; http.response_body; content:"|22|inputSchema|22|"; pcre:"/(\b(curl|wget)\b[^|]{1,200}\|\s*(sudo\s+)?(ba|z|da)?sh\b|[\\\/]dev[\\\/]+tcp[\\\/]|\bbase64\s+(-d|--decode)\b[^|]{0,60}\|\s*(ba|z|da)?sh\b|powershell[^\x22]{0,60}\s-e(nc|ncodedcommand)?\s|\bn(c|cat)\b[^\x22]{0,60}\s-e\s|[\\\/]bin[\\\/]+(ba|z|da)?sh\s+-c\s)/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1059.004, signature_severity Critical, false_positive Low; sid:9202628; rev:1;)
 
 
 # ============================================================================
@@ -118,14 +251,25 @@ alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Respo
 # Internal service access, metadata endpoint abuse.
 # ============================================================================
 
-# --- SSRF: Internal IP in MCP Tool Request ---
-alert http any any -> any any (msg:"CGTI-OC MCP - SSRF Attempt via MCP Tool (Internal IP Target)"; flow:to_server,established; http.request_body; content:"tools/call"; pcre:"/https?:\/\/(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1090, signature_severity Critical, false_positive Low; sid:9202630; rev:1;)
+# --- SSRF: Internal Address in MCP Tool Request from External ---
+# RFC1918, loopback, link-local, localhost, IPv6 loopback/ULA/link-local, hex/octal/decimal IPv4, user@host.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - SSRF Attempt via MCP Tool (Internal IP Target)"; flow:to_server,established; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/(https?|ftp):(\\?\/){2}([^\/\x22\s@]*@)?(127\.\d|10\.\d|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|localhost\b|\[(::1|::ffff:|fe80:|f[cd][0-9a-f]{2}:)|0x[0-9a-f]{1,8}[.:\/\x22\\]|0177\.|\d{8,10}[:\/\x22\\?#])/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1090, signature_severity Critical, false_positive Low; sid:9202630; rev:2;)
 
 # --- SSRF: Cloud Metadata Endpoint ---
-alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Cloud Metadata via MCP Tool (169.254.169.254)"; flow:to_server,established; http.request_body; content:"tools/call"; content:"169.254.169.254"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202631; rev:1;)
+# AWS/Azure/GCP/OCI IMDS, ECS task credentials, GCP hostname, Alibaba, IPv6 IMDS, decimal and hex encodings.
+alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Cloud Metadata via MCP Tool (169.254.169.254)"; flow:to_server,established; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/(169\.254\.169\.254|169\.254\.170\.2\b|metadata\.google\.internal|100\.100\.100\.200|fd00:ec2::254|\b2852039166\b|0xa9fea9fe)/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202631; rev:2;)
 
 # --- SSRF: Kubernetes API ---
-alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Kubernetes API via MCP"; flow:to_server,established; http.request_body; content:"tools/call"; pcre:"/https?:\/\/kubernetes/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202632; rev:1;)
+alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Kubernetes API via MCP"; flow:to_server,established; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/https?:(\\?\/){2}kubernetes/i"; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1552.005, signature_severity Critical, false_positive Very_Low; sid:9202632; rev:2;)
+
+# --- Internal Address in MCP Tool Request from HOME_NET (policy) ---
+# v1.0 raised priority 1 for this. An agent testing http://localhost:3000 is normal developer traffic,
+# but it is also what a prompt-injected agent pivoting into the LAN looks like. Kept as a low-priority signal.
+alert http $HOME_NET any -> any any (msg:"CGTI-OC MCP - Agent Tool Call Targets Internal Address (Possible Confused Deputy)"; flow:to_server,established; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/(https?|ftp):(\\?\/){2}([^\/\x22\s@]*@)?(127\.\d|10\.\d|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|localhost\b|\[(::1|::ffff:|fe80:|f[cd][0-9a-f]{2}:)|0x[0-9a-f]{1,8}[.:\/\x22\\]|0177\.|\d{8,10}[:\/\x22\\?#])/i"; threshold:type limit, track by_src, count 1, seconds 60; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1090, signature_severity Minor, false_positive High; sid:9202633; rev:1;)
+
+# --- Dangerous URL Scheme in MCP Tool Request ---
+# file:// is only reported for system locations; file:// URLs of project files are normal.
+alert http any any -> any any (msg:"CGTI-OC MCP - Dangerous URL Scheme in MCP Tool Arguments (gopher/dict/file)"; flow:to_server,established; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; pcre:"/\b(gopher|dict|tftp|jar|netdoc|php|expect):(\\?\/){2}|\bfile:(\\?\/){2,3}(etc|proc|root|var[\\\/]+run[\\\/]+secrets|c:[\\\/]+windows)[\\\/]/i"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1090, signature_severity Major, false_positive Low; sid:9202634; rev:1;)
 
 
 # ============================================================================
@@ -135,48 +279,108 @@ alert http any any -> any any (msg:"CGTI-OC MCP - SSRF to Kubernetes API via MCP
 # ============================================================================
 
 # --- Rapid MCP Endpoint Probing ---
-alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Rapid MCP Endpoint Probing (Multiple Paths)"; flow:to_server,established; http.uri; pcre:"/^\/(mcp|sse|messages)\/?$/"; threshold:type both, track by_src, count 3, seconds 10; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9202640; rev:1;)
+# A real client makes one sessionless request (initialize or GET /sse) and then carries a session id
+# (Mcp-Session-Id header or sessionId query parameter). Three sessionless hits in 10 s is a scanner.
+# Stateless servers that never issue a session id will still trigger this; suppress per server if needed.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Rapid MCP Endpoint Probing (Multiple Paths)"; flow:to_server,established; http.uri; content:!"session"; nocase; pcre:"/^\/((api|v1|api\/v1)\/)?(mcp|sse|messages?)\/?(\?|$)/i"; http.header_names; content:!"|0d 0a|mcp-session-id|0d 0a|"; nocase; threshold:type both, track by_src, count 3, seconds 10; classtype:attempted-recon; priority:2; metadata:tier behavioral, mitre_attack T1595, signature_severity Major, false_positive Low; sid:9202640; rev:2;)
 
-# --- MCP Protocol Detection in Response (jsonrpc + protocolVersion) ---
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Protocol Fingerprint in Outbound Response"; flow:established,to_client; http.response_body; content:"jsonrpc"; content:"protocolVersion"; distance:0; within:100; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1190, signature_severity Major, false_positive Low; sid:9202641; rev:2;)
+# --- MCP Protocol Detection in Response (initialize result) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Protocol Fingerprint in Outbound Response"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; content:"|22|protocolVersion|22|"; content:"|22|serverInfo|22|"; threshold:type limit, track by_src, count 1, seconds 60; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1190, signature_severity Major, false_positive Low; sid:9202641; rev:3;)
 
 
 # ============================================================================
 # 08F: MCP CREDENTIAL & DATA EXFILTRATION
 # ============================================================================
 # Data exfiltration via a malicious MCP server or a compromised MCP.
+# v1.1 matches on the decoded HTTP body, so gzip/deflate responses are covered.
 # ============================================================================
 
-# --- MCP Tool Response Leaking API Keys ---
-alert http any any -> any any (msg:"CGTI-OC MCP - API Key in MCP Tool Response (sk- pattern)"; flow:established; content:"jsonrpc"; content:"sk-"; distance:0; within:200; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Major, false_positive Low; sid:9202650; rev:2;)
+# --- MCP Response Leaking API Keys / Tokens ---
+# OpenAI/Anthropic/OpenRouter sk- keys (must contain a digit and not follow a letter), GitHub, Slack, Google, GitLab.
+alert http any any -> any any (msg:"CGTI-OC MCP - API Key in MCP Tool Response (sk- pattern)"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/(?<![A-Za-z0-9_\-])(sk-(?:ant-|proj-|or-v1-|svcacct-)?(?=[A-Za-z0-9_\-]{0,48}\d)[A-Za-z0-9_\-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|xox[abprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z_\-]{35}|glpat-[A-Za-z0-9_\-]{20,})/"; classtype:trojan-activity; priority:2; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Major, false_positive Low; sid:9202650; rev:3;)
 
-# --- MCP Tool Response Leaking AWS Credentials ---
-alert http any any -> any any (msg:"CGTI-OC MCP - AWS Credentials in MCP Response"; flow:established; content:"jsonrpc"; content:"aws_secret_access_key"; distance:0; within:500; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202651; rev:1;)
+# --- MCP Response Leaking AWS Credentials ---
+alert http any any -> any any (msg:"CGTI-OC MCP - AWS Credentials in MCP Response"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; pcre:"/(?i:aws_secret_access_key)|\b(AKIA|ASIA)[0-9A-Z]{16}\b/"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1552.001, signature_severity Critical, false_positive Very_Low; sid:9202651; rev:2;)
 
-# --- MCP Tool Sending Data to External C2 ---
-# Hidden callback that sends data from malicious tool response to C2
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Context Data POST to Bare IP (Exfiltration)"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d+\.\d+\.\d+\.\d+$/"; http.request_body; content:"jsonrpc"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1041, signature_severity Critical, false_positive Low; sid:9202652; rev:1;)
+# --- MCP Response Leaking a Private Key ---
+alert http any any -> any any (msg:"CGTI-OC MCP - Private Key in MCP Response"; flow:established,to_client; http.response_body; content:"|22|jsonrpc|22|"; content:"-----BEGIN "; content:"PRIVATE KEY-----"; distance:0; within:30; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1552.004, signature_severity Critical, false_positive Very_Low; sid:9202655; rev:1;)
+
+# --- Secret Sent to an External MCP Server in Tool Arguments ---
+# The exfiltration half of tool poisoning: the agent passes a key it read locally as a tool parameter.
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - Secret Sent to External MCP Server in Tool Arguments (Exfiltration)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|jsonrpc|22|"; pcre:"/(?<![A-Za-z0-9_\-])(sk-(?:ant-|proj-|or-v1-|svcacct-)?(?=[A-Za-z0-9_\-]{0,48}\d)[A-Za-z0-9_\-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|xox[abprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z_\-]{35}|glpat-[A-Za-z0-9_\-]{20,})|\b(AKIA|ASIA)[0-9A-Z]{16}\b|(?i:aws_secret_access_key)|-----BEGIN [A-Z ]{0,20}PRIVATE KEY-----/"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1041, signature_severity Critical, false_positive Low; sid:9202654; rev:1;)
+
+# --- MCP Tool Call to an External Server on a Bare IP ---
+# v1.0 matched any JSON-RPC POST to an IP (Ethereum nodes, aria2 ...). v1.1 requires an MCP tools/call.
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Context Data POST to Bare IP (Exfiltration)"; flow:to_server,established; http.method; content:"POST"; http.host; pcre:"/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; threshold:type limit, track by_src, count 1, seconds 60; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1041, signature_severity Critical, false_positive Low; sid:9202652; rev:2;)
 
 # --- Bulk MCP Tool Calls (Automated Abuse) ---
-alert http any any -> any any (msg:"CGTI-OC MCP - Rapid MCP Tool Calls (Automated Abuse)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"tools/call"; threshold:type both, track by_src, count 20, seconds 30; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1059, signature_severity Major, false_positive Medium; sid:9202653; rev:1;)
+alert http any any -> any any (msg:"CGTI-OC MCP - Rapid MCP Tool Calls (Automated Abuse)"; flow:to_server,established; http.method; content:"POST"; http.request_body; content:"|22|tools"; content:"call|22|"; distance:1; within:11; threshold:type both, track by_src, count 20, seconds 30; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1059, signature_severity Major, false_positive Medium; sid:9202653; rev:2;)
 
 
 # ============================================================================
 # 08G: OPENCLAW MCP INTEGRATION SPECIFIC
 # ============================================================================
 # Risks arising from OpenClaw's mcporter skill and MCP integration.
+# Tunnel list: ngrok, Cloudflare quick tunnels, localtunnel, serveo, localhost.run,
+# bore, pinggy, Microsoft dev tunnels, tunnelmole, zrok.
 # ============================================================================
 
 # --- OpenClaw mcporter Connecting to Unknown MCP Server ---
-alert dns $HOME_NET any -> any any (msg:"CGTI-OC MCP - OpenClaw mcporter Dynamic DNS Lookup (Potential Malicious MCP)"; dns.query; pcre:"/^[a-z0-9]{10,}\.(ngrok|serveo|localtunnel|bore\.pub|lhr\.life)/i"; classtype:trojan-activity; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1572, signature_severity Major, false_positive Low, deployment_note Tunnel services used to expose MCP servers are suspicious in agent context; sid:9202660; rev:1;)
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC MCP - OpenClaw mcporter Dynamic DNS Lookup (Potential Malicious MCP)"; dns.query; pcre:"/(^|\.)(ngrok(-free)?\.(io|app|dev)|trycloudflare\.com|loca\.lt|localtunnel\.me|serveo\.net|serveousercontent\.com|lhr\.life|localhost\.run|bore\.pub|pinggy\.(io|link)|devtunnels\.ms|tunnelmole\.net|share\.zrok\.io)$/i"; threshold:type limit, track by_src, count 1, seconds 60; classtype:trojan-activity; priority:2; metadata:tier behavioral, affected_product OpenClaw, mitre_attack T1572, signature_severity Major, false_positive Low, deployment_note Tunnel services used to expose MCP servers are suspicious in agent context; sid:9202660; rev:2;)
 
-# --- MCP Server via ngrok Tunnel ---
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Connection via ngrok Tunnel"; flow:to_server,established; http.host; content:"ngrok"; http.request_body; content:"jsonrpc"; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1572, signature_severity Major, false_positive Low; sid:9202661; rev:2;)
+# --- MCP Server via Tunnel Service (cleartext HTTP) ---
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - MCP Connection via ngrok Tunnel"; flow:to_server,established; http.host; pcre:"/(^|\.)(ngrok(-free)?\.(io|app|dev)|trycloudflare\.com|loca\.lt|localtunnel\.me|serveo\.net|serveousercontent\.com|lhr\.life|localhost\.run|bore\.pub|pinggy\.(io|link)|devtunnels\.ms|tunnelmole\.net|share\.zrok\.io)(:\d+)?$/i"; http.request_body; content:"|22|jsonrpc|22|"; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1572, signature_severity Major, false_positive Low; sid:9202661; rev:3;)
+
+# --- Connection to a Tunnel Service (TLS SNI) ---
+# Tunnel endpoints are HTTPS in practice, where 9202661 cannot see the request.
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"CGTI-OC MCP - TLS Connection to Tunnel Service (Possible Tunnelled MCP Server)"; flow:to_server,established; tls.sni; pcre:"/(^|\.)(ngrok(-free)?\.(io|app|dev)|trycloudflare\.com|loca\.lt|localtunnel\.me|serveo\.net|serveousercontent\.com|lhr\.life|localhost\.run|bore\.pub|pinggy\.(io|link)|devtunnels\.ms|tunnelmole\.net|share\.zrok\.io)$/i"; threshold:type limit, track by_src, count 1, seconds 60; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1572, signature_severity Major, false_positive Low; sid:9202664; rev:1;)
+
+# --- Tunnel Agent Running Inside HOME_NET ---
+# The other direction: ngrok / cloudflared started locally publishes a local port (often an MCP server) to the internet.
+alert dns $HOME_NET any -> any any (msg:"CGTI-OC MCP - Tunnel Agent Active in HOME_NET (Local Service May Be Exposed)"; dns.query; pcre:"/(^|\.)(ngrok-agent\.com|tunnel\.([a-z]{2}\.)?ngrok\.com|argotunnel\.com)$/i"; threshold:type limit, track by_src, count 1, seconds 300; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1572, signature_severity Major, false_positive Low; sid:9202663; rev:1;)
 
 # --- MCP Tool Shadowing Indicator ---
 # Multiple MCP servers defining the same tool name (override attack)
-# DISABLED-FP: Hardcoded tool name database_query — poor detection + FP on legitimate tool descriptions
+# DISABLED: Suricata inspects one flow at a time and cannot compare tool names offered by two different
+# servers. Shadowing in practice is delivered through a poisoned description that talks about another
+# server's tool, which SIDs 9202625-9202628 cover. Name-collision checks belong in the MCP client or gateway.
 # alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Tool Definition Override (Shadowing Indicator)"; flow:established,to_client; http.response_body; content:"tools"; content:"database_query"; content:"database_query"; distance:1; classtype:trojan-activity; priority:2; metadata:mitre_attack T1036, signature_severity Major, false_positive Medium; sid:9202662; rev:1;)
+
+
+# ============================================================================
+# 08H: SERVER-INITIATED REQUEST ABUSE
+# ============================================================================
+# An MCP server can send requests back to the client: elicitation/create asks the
+# user for input, sampling/createMessage asks the client's LLM to generate text.
+# ============================================================================
+
+# --- Elicitation Asking for Secrets ---
+# The MCP specification forbids servers from requesting sensitive information through form elicitation.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - MCP Server Elicitation Requests Sensitive Data (Phishing)"; flow:established,to_client; http.response_body; content:"|22|elicitation"; content:"create|22|"; distance:1; within:13; pcre:"/(passwords?|passphrase|api[ _\-]?key|secret[ _\-]?key|access[ _\-]?token|private[ _\-]?key|seed[ _\-]?phrase|recovery[ _\-]?phrase|mnemonic|credit[ _\-]?card|card[ _\-]?number|\bcvv\b|\bssn\b|social security|one[ \-]time (code|password)|\botp\b|verification code|\b2fa\b)/i"; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1056, signature_severity Critical, false_positive Low; sid:9202670; rev:1;)
+
+# --- Sampling Request from an External Server (policy) ---
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - External MCP Server Requested LLM Sampling"; flow:established,to_client; http.response_body; content:"|22|sampling"; content:"createMessage|22|"; distance:1; within:20; threshold:type limit, track by_dst, count 1, seconds 60; classtype:policy-violation; priority:3; metadata:tier policy, mitre_attack T1496, signature_severity Minor, false_positive Medium; sid:9202671; rev:1;)
+
+
+# ============================================================================
+# 08I: KNOWN CVES & BROWSER-BORNE ATTACKS
+# ============================================================================
+
+# --- CVE-2025-49596: MCP Inspector Proxy Unauthenticated RCE (< 0.14.1) ---
+# GET /sse?transportType=stdio&command=<binary>&args=<...> on the proxy port (6277) spawns the command.
+# The Inspector's own UI makes this request over loopback; seeing it on the wire means a remote caller.
+alert http any any -> any any (msg:"CGTI-OC MCP - MCP Inspector Proxy RCE Attempt (CVE-2025-49596)"; flow:to_server,established; http.uri; content:"transportType=stdio"; nocase; content:"command="; nocase; reference:cve,2025-49596; classtype:attempted-admin; priority:1; metadata:tier behavioral, mitre_attack T1190, signature_severity Critical, false_positive Low; sid:9202680; rev:1;)
+
+# --- CVE-2025-6514: mcp-remote OS Command Injection via authorization_endpoint ---
+# A malicious server's OAuth metadata carries a non-HTTP(S) authorization_endpoint (file:, a:$(...)) or a
+# shell substitution inside the URL, which vulnerable mcp-remote versions hand to the OS.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"CGTI-OC MCP - Malicious OAuth authorization_endpoint from MCP Server (CVE-2025-6514)"; flow:established,to_client; http.response_body; content:"|22|authorization_endpoint|22|"; pcre:"/\x22authorization_endpoint\x22\s*:\s*\x22(?:(?!https?:(\\?\/){2})|[^\x22]{0,300}(\$\(|\x60))/i"; reference:cve,2025-6514; classtype:trojan-activity; priority:1; metadata:tier behavioral, mitre_attack T1203, signature_severity Critical, false_positive Very_Low; sid:9202681; rev:1;)
+
+# --- Cross-Origin Browser Request to an MCP Endpoint ---
+# A web page (Origin header present and not localhost) posting JSON-RPC to an MCP server in HOME_NET is the
+# shape of DNS-rebinding and CSRF attacks on local MCP servers. A web UI served from the MCP host itself
+# also matches; suppress per destination if you run one.
+alert http any any -> $HOME_NET any (msg:"CGTI-OC MCP - Cross-Origin Browser Request to MCP Endpoint (DNS Rebinding/CSRF)"; flow:to_server,established; http.method; content:"POST"; http.header; content:"Origin|3a 20|"; nocase; pcre:"/^Origin:\s*https?:\/\/(?!(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\s*$)/mi"; http.request_body; content:"|22|jsonrpc|22|"; content:"|22|method|22|"; classtype:attempted-admin; priority:2; metadata:tier behavioral, mitre_attack T1189, signature_severity Major, false_positive Medium; sid:9202682; rev:1;)
 
 
 # ============================================================================
